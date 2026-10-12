@@ -1,0 +1,40 @@
+{
+  "name": "versova-bot",
+  "version": "1.0.0",
+  "description": "◢禍◣ Versova ࿙☕࿚ — VÉRSOVA: bot de WhatsApp para administración de teams de rol + panel web de gestión de sub-bots.",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "bot": "node src/index.js --no-web",
+    "web": "node src/index.js --web-only",
+    "sim": "node tools/simulator.js",
+    "test": "node --test --test-concurrency=1",
+    "db:inspect": "node scripts/db-inspect.js",
+    "db:reset": "node scripts/db-reset.js",
+    "doctor": "node scripts/doctor.js",
+    "test:watch": "node --test --watch --test-concurrency=1"
+  },
+  "keywords": [
+    "whatsapp",
+    "baileys",
+    "bot",
+    "rol",
+    "roleplay",
+    "versova",
+    "team-management"
+  ],
+  "author": "◢禍◣ Versova ࿙☕࿚",
+  "license": "MIT",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
+    "better-sqlite3": "^13.0.3",
+    "dotenv": "^18.0.7",
+    "express": "^5.3.0",
+    "pino": "^10.4.0",
+    "qrcode": "^1.5.4"
+  }
+}
