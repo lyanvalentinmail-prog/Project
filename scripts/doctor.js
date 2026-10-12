@@ -117,7 +117,14 @@ async function main() {
 
   /* ── configuración ───────────────────────────────────────── */
   const envFile = path.join(ROOT, '.env');
-  check('archivo .env', fs.existsSync(envFile), fs.existsSync(envFile) ? 'presente' : 'falta (copia .env.example → .env)');
+  const hasEnv = fs.existsSync(envFile) || Boolean(process.env.RENDER || process.env.PORT);
+  check(
+    'archivo .env / variables de entorno',
+    hasEnv,
+    fs.existsSync(envFile)
+      ? 'archivo .env presente'
+      : (process.env.RENDER ? 'variables de entorno de Render detectadas' : 'usando variables de entorno del sistema')
+  );
   check('OWNER_NUMBERS configurado', env.ownerNumbers.length > 0, env.ownerNumbers.length ? `${env.ownerNumbers.length} número(s) owner` : 'sin owner: nadie tendrá rango máximo');
   check('prefijo', Boolean(IDENTITY.prefix), `"${IDENTITY.prefix}"`);
   check('contraseña del panel', true, env.dashboardPassword ? 'definida en .env' : 'se generará y guardará en la base de datos');

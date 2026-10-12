@@ -1,0 +1,65 @@
+# ════════════════════════════════════════════════════════════════
+#  𓆩 ☕ 𓆪  VÉRSOVA — Render Blueprint (Plan Gratuito)  𓆩 ☕ 𓆪
+# ════════════════════════════════════════════════════════════════
+# Especificación oficial de Render Blueprint:
+# https://render.com/docs/blueprint-spec
+#
+# CARACTERÍSTICAS DEL PLAN GRATUITO EN RENDER:
+# 1. Costo: 0 $/mes (750 horas gratuitas al mes).
+# 2. Suspensión por inactividad: los Web Services gratuitos se suspenden
+#    tras 15 minutos sin tráfico HTTP entrante. Para mantener el bot
+#    activo 24/7 sin costo, puedes configurar un ping periódico
+#    (cada 10-12 minutos) a /api/health mediante un servicio gratuito
+#    como UptimeRobot o cron-job.org.
+# 3. Almacenamiento: en el plan free, Render no admite discos persistentes
+#    (disk:). Los archivos locales (data/ y sessions/) se restablecen
+#    al reiniciar o redesplegar el contenedor.
+#    Si deseas persistencia permanente con disco SSD de Render, actualiza
+#    el plan a 'starter' y añade el bloque disk.
+# ════════════════════════════════════════════════════════════════
+
+services:
+  - type: web
+    name: versova-bot
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: NODE_ENV
+        value: production
+      - key: WEB_HOST
+        value: 0.0.0.0
+      - key: DASHBOARD_PASSWORD
+        generateValue: true
+      - key: OWNER_NUMBERS
+        sync: false
+      - key: BOT_NAME
+        value: VÉRSOVA
+      - key: BOT_PREFIX
+        value: "."
+      - key: BOT_TEAM
+        value: "◢禍◣ Versova ࿙☕࿚"
+      - key: MAX_INSTANCES
+        value: "3"
+      - key: INACTIVITY_DAYS
+        value: "7"
+      - key: RESERVE_HOURS
+        value: "24"
+      - key: MAX_WARNINGS
+        value: "3"
+      - key: RATE_LIMIT_MAX
+        value: "6"
+      - key: RATE_LIMIT_WINDOW_MS
+        value: "10000"
+      - key: WELCOME_ENABLED
+        value: "true"
+      - key: PRIVATE_COMMANDS
+        value: "true"
+      - key: LOG_LEVEL
+        value: info

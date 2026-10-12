@@ -46,6 +46,11 @@ export async function createWebServer({ manager, password, port = env.webPort, h
 
   const auth = createAuth({ password });
 
+  /* ── health check estándar (/health y /api/health) ────────── */
+  app.get('/health', (_req, res) => {
+    res.json({ ok: true, status: 'healthy', uptime: process.uptime() });
+  });
+
   /* ── SSE: estado en vivo de los sub-bots ────────────────────── */
   app.get('/api/stream', auth.requireAuth, (req, res) => {
     res.writeHead(200, {
@@ -100,7 +105,7 @@ export async function createWebServer({ manager, password, port = env.webPort, h
   const server = await listen(app, port, host);
   const actualPort = server.address().port;
 
-  const url = `http://${host === '0.0.0.0' ? 'localhost' : host}:${actualPort}`;
+  const url = process.env.RENDER_EXTERNAL_URL || `http://${host === '0.0.0.0' ? 'localhost' : host}:${actualPort}`;
   log.info({ url, clients: clients.size }, 'panel web listo');
 
   return {

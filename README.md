@@ -13,6 +13,7 @@
 [![Baileys](https://img.shields.io/badge/baileys-7.0.0--rc14-c8a27a)](https://github.com/WhiskeySockets/Baileys)
 [![tests](https://img.shields.io/badge/tests-143%20pass-8fbc72)](#pruebas)
 [![version](https://img.shields.io/badge/versi%C3%B3n-1.0-e8c9a0)](#)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/lyanvalentinmail-prog/Project)
 
 </div>
 
@@ -230,6 +231,41 @@ Detalle completo, con los códigos de error reales y sus mitigaciones:
 | [docs/BASE_DE_DATOS.md](docs/BASE_DE_DATOS.md) | Esquema campo por campo, índices, invariantes y copias de seguridad |
 | [docs/COMANDOS.md](docs/COMANDOS.md) | Los 52 comandos con permisos, ejemplos, alias y límites |
 | [docs/LIMITACIONES.md](docs/LIMITACIONES.md) | Lo que WhatsApp no permite y cómo lo resuelve el bot |
+
+---
+
+## 𓆩 ☁ 𓆪 Despliegue en Render (Blueprint Gratis)
+
+Puedes desplegar VÉRSOVA en **Render de forma gratuita** con un solo clic usando el archivo `render.yaml` incluido en el repositorio.
+
+<div align="center">
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/lyanvalentinmail-prog/Project)
+
+</div>
+
+### Pasos para desplegar
+
+1. Haz clic en el botón **Deploy to Render** de arriba (o en [dashboard.render.com](https://dashboard.render.com) ve a **New +** → **Blueprint** y selecciona este repositorio).
+2. Render leerá automáticamente la configuración de `render.yaml`:
+   - **Servicio:** Web Service (`versova-bot`)
+   - **Plan:** Free (gratuito)
+   - **Runtime:** Node 22
+   - **Health check:** `/api/health`
+3. En la pantalla de creación del Blueprint, introduce tu número en `OWNER_NUMBERS` (formato internacional sin `+`, ej. `5215512345678`).
+4. Haz clic en **Apply**. Render compilará e iniciará el bot y el panel web automáticamente.
+5. Al terminar el despliegue, abre la URL asignada por Render (ej. `https://versova-bot.onrender.com`).
+6. **Contraseña del panel:** Render genera una contraseña segura automáticamente (`DASHBOARD_PASSWORD`). Puedes verla en la pestaña **Environment** de tu servicio en Render (o en los logs de inicio). También puedes cambiarla por la que desees desde esa misma pestaña.
+7. Inicia sesión en el panel, ve a **Sub-bots → Crear** y vincula tu número mediante **QR** o **Pairing Code**.
+
+### ⚠ Consideraciones del plan gratuito de Render
+
+- **Suspensión por inactividad (Spin-down):** Los servicios web en el plan gratuito de Render se suspenden tras 15 minutos sin tráfico HTTP entrante. Para mantener tu bot conectado **24/7 de forma gratuita**, configura un monitor de disponibilidad gratuito (como [UptimeRobot](https://uptimerobot.com) o [cron-job.org](https://cron-job.org)) que envíe una petición cada 10-12 minutos a:
+  ```
+  https://<tu-servicio>.onrender.com/api/health
+  ```
+  Render otorga 750 horas gratuitas por mes, suficiente para mantener un servicio activo 24/7 sin ningún costo.
+- **Almacenamiento efímero en el plan free:** Render no permite discos persistentes (`disk:`) en el plan gratuito. La base de datos y sesiones se mantienen activas mientras el contenedor no se reinicie o redespliegue. Si deseas persistencia permanente con disco SSD dedicado en Render, actualiza al plan **Starter** ($7/mes) y añade la configuración de disco a `render.yaml`.
 
 ---
 

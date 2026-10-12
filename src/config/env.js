@@ -78,7 +78,7 @@ export const env = Object.freeze({
 
   // web
   webHost: str(process.env.WEB_HOST, '0.0.0.0'),
-  webPort: int(process.env.WEB_PORT, 3000, 1, 65535),
+  webPort: int(process.env.PORT || process.env.WEB_PORT, 3000, 1, 65535),
   dashboardPassword: str(process.env.DASHBOARD_PASSWORD, ''),
   maxInstances: int(process.env.MAX_INSTANCES, 3, 1, 3),
 
@@ -86,8 +86,8 @@ export const env = Object.freeze({
   dataDir: DATA_DIR,
   sessionsDir: SESSIONS_DIR,
   logDir: LOG_DIR,
-  dbPath: abs(process.env.DB_PATH, './data/versova.db'),
-  logFile: abs(process.env.LOG_FILE, './logs/versova.log'),
+  dbPath: process.env.DB_PATH ? abs(process.env.DB_PATH, '') : path.join(DATA_DIR, 'versova.db'),
+  logFile: process.env.LOG_FILE ? abs(process.env.LOG_FILE, '') : path.join(LOG_DIR, 'versova.log'),
 
   // comportamiento por defecto (cada grupo puede sobrescribirlo en su config)
   inactivityDays: int(process.env.INACTIVITY_DAYS, 7, 1, 365),
