@@ -1,1 +1,258 @@
-# Project
+<div align="center">
+
+ㅤㅤ࿚ׄ࿙ֹ࿚᮫᜔۬፟֟࿙ֹ࿚ׄ࿙
+ㅤㅤㅤ𓆩ㅤ禊ㅤ𓆪
+ㅤㅤ𝑽 𝑬́ 𝑹 𝑺 𝑶 𝑽 𝑨
+ㅤㅤ◢禍◣ Versova ࿙☕࿚
+
+**Bot de WhatsApp para administración de teams de rol + panel web para gestionar hasta 3 sub-bots.**
+
+`Registro · Personajes · Gestión · Interacción · Administración · Base de datos persistente`
+
+[![Node](https://img.shields.io/badge/node-%E2%89%A522-8fbc72)](https://nodejs.org)
+[![Baileys](https://img.shields.io/badge/baileys-7.0.0--rc14-c8a27a)](https://github.com/WhiskeySockets/Baileys)
+[![tests](https://img.shields.io/badge/tests-143%20pass-8fbc72)](#pruebas)
+[![version](https://img.shields.io/badge/versi%C3%B3n-1.0-e8c9a0)](#)
+
+</div>
+
+---
+
+## 𓆩 ☕ 𓆪 Qué es
+
+VÉRSOVA es un bot **completo, modular y estable** para gestionar teams de rol dentro de
+grupos de WhatsApp: registro de integrantes con ficha, asignación de personajes con
+aprobación del staff, reservas temporales, parejas, AFK, control de inactividad,
+moderación con advertencias y baneos, y una estética propia (dark, japonesa, con café).
+
+Incluye además un **panel web** para administrar tus bots: crear hasta **3 sub-bots con
+números distintos** y vincular cada uno con **QR o pairing code**, ver grupos, integrantes,
+personajes y aprobar solicitudes desde el navegador.
+
+> Todo es funcional: no hay comandos de adorno ni respuestas simuladas. Cuando WhatsApp
+> impide algo, el bot lo dice y explica el motivo real ([limitaciones](docs/LIMITACIONES.md)).
+
+---
+
+## 𓆩 𖤐 𓆪 Requisitos
+
+- **Node.js 22 o superior** (`node -v`)
+- Un **número de WhatsApp** por sub-bot (recomendado: números secundarios dedicados)
+- Que ese número **te permita ser administrador** en los grupos donde quieras moderar
+- npm (viene con Node)
+
+---
+
+## 𓆩 🥢 𓆪 Instalación
+
+```bash
+# 1 · dependencias
+npm install
+
+# 2 · configuración
+cp .env.example .env
+#    edita OWNER_NUMBERS con tu número (formato internacional sin "+"):
+#    OWNER_NUMBERS=5215512345678
+
+# 3 · diagnóstico del entorno (opcional pero recomendado)
+npm run doctor
+
+# 4 · arrancar bot + panel web
+npm start
+```
+
+Al arrancar verás algo así:
+
+```
+𓆩 ☕ 𓆪  VÉRSOVA v1.0 · prefijo "."
+Base de datos  ⁙ data/versova.db
+Comandos       ⁙ 52 registrados
+Panel web      ⁙ http://localhost:3000
+⚠ No hay sub-bots creados. Abre el panel web y crea el primero.
+```
+
+---
+
+## 𓆩 ♡ 𓆪 Vincular un número (QR o pairing code)
+
+1. Abre el panel: **http://localhost:3000** (en un servidor remoto, el puerto 3000).
+2. Contraseña: la que pusiste en `DASHBOARD_PASSWORD`. Si la dejaste vacía, se genera una
+   aleatoria, se guarda en la base de datos y **se imprime en la consola** al arrancar.
+3. En **Sub-bots → Crear**: nombre, número internacional sin `+` (ej. `5215512345678`)
+   y método de vinculación.
+4. **QR** → se muestra el código en la ventana y se renueva solo; escanéalo en
+   *WhatsApp → Ajustes → Dispositivos vinculados → Vincular un dispositivo*.
+5. **Pairing code** → aparece un código `ABCD-1234`; en el teléfono ve a
+   *Dispositivos vinculados → Vincular un dispositivo → Vincular con el número de teléfono*
+   y escríbelo (caduca en ~60 s; puedes regenerarlo).
+6. Cuando el estado pase a **conectado**, añade el bot a tu grupo de rol y escribe `.menu`.
+
+Puedes repetir el proceso hasta **3 sub-bots** con números distintos. Cada uno tiene su
+carpeta de credenciales en `sessions/` (fuera de git).
+
+---
+
+## 𓆩 ⛓️ 𓆪 Comandos (52)
+
+Prefijo `.` · idioma español · `.menu` muestra el menú oficial del team y `.help <sección>`
+el detalle. Referencia completa en **[docs/COMANDOS.md](docs/COMANDOS.md)**.
+
+| Sección | Comandos |
+|---|---|
+| **Información** | `.menu` `.help` `.ping` `.botinfo` `.owner` |
+| **Registro** | `.reg <nombre.edad>` `.unreg` `.editar <nombre.edad>` `.ficha` |
+| **Personajes** | `.rol <personaje>` `.cambiarol <personaje>` `.roles` `.mirol` `.reservar <personaje>` `.reservas` `.liberarreserva` `.liberar` `.cancelarsolicitud` |
+| **Gestión** | `.team` `.miembros` `.afk <motivo>` `.afks` `.inactivos` `.config [clave] [valor]` `.sync` |
+| **Interacción** | `.perfil [@user]` `.pareja <@user>` `.aceptar` `.rechazar` `.terminar` `.ship <@a> <@b>` `.reglas` `.admins` |
+| **Administración** | `.add` `.expulsar` `.ban` `.unban` `.bloqueados` `.resetrol` `.warn` `.unwarn` `.warns` `.acceptrol` `.denyrol` `.pendientes` `.anuncio` `.close` `.open` `.invite` `.auditoria` |
+| **Confirmación** | `.confirmar` (`.si` `.sí` `.yes` `.y`) · `.cancelar` (`.no` `.cancel`) |
+
+`.acceptrol` y `.denyrol` funcionan **respondiendo** al aviso, con el folio (`#12`) o con
+el nombre del personaje.
+
+---
+
+## 𓆩 𓂃 𓆪 Estructura del proyecto
+
+```
+src/
+├── index.js              arranque (bot + panel, flags --no-web / --web-only)
+├── config/               entorno, identidad, alias y valores por defecto
+├── core/                 adaptador Baileys, orquestador de sub-bots, router,
+│                         contexto, eventos de grupo, sincronización, mantenimiento
+├── db/                   conexión WAL, esquema SQL y repositorios
+├── services/             reglas de negocio (registro, roles, team, social, moderación)
+├── commands/             52 comandos organizados por categoría
+├── security/             permisos, validación, rate-limit, confirmaciones
+├── design/               tema, 71 plantillas y menú oficial
+└── utils/                ids, tiempo, texto, hash
+web/                      panel: servidor Express, API REST, SSE, auth y frontend
+tools/simulator.js        banco de pruebas de comandos en terminal (NO es el bot real)
+scripts/                  doctor, inspección y reinicio de la base de datos
+tests/                    143 pruebas con node:test
+docs/                     arquitectura, base de datos, comandos y limitaciones
+```
+
+La regla de diseño: **los servicios no saben que existe WhatsApp**. Devuelven
+`{ ok, view, data, extra, actions }`; el adaptador los convierte en mensajes y efectos.
+Por eso se puede probar todo sin vincular un número.
+
+---
+
+## 𓆩 ☾ 𓆪 Scripts
+
+| Comando | Qué hace |
+|---|---|
+| `npm start` | Bot + panel web |
+| `npm run bot` | Solo el bot (sin panel) |
+| `npm run web` | Solo el panel web |
+| `npm test` | 143 pruebas (servicios, router, base de datos, API) |
+| `npm run sim` | Simulador interactivo de comandos en terminal |
+| `npm run sim -- --demo` | Demo guiada con 81 escenarios reales |
+| `npm run doctor` | Diagnóstico: Node, dependencias, BD, carpetas, `.env`, conectividad |
+| `npm run db:inspect` | Estado de la base de datos (`-- --group <id>`, `-- --json`) |
+| `npm run db:reset` | Borra la base de datos (`-- --dry`, `-- --yes [--sessions]`) |
+
+---
+
+## 𓆩 ⏳ 𓆪 Probar sin WhatsApp
+
+```bash
+npm run sim -- --demo     # 81 escenarios: registro, roles, parejas, warns, bans…
+npm run sim               # terminal interactiva: escribe comandos como en el grupo
+```
+
+El simulador usa la **misma base de datos, los mismos servicios y las mismas plantillas**
+que el bot real; solo sustituye el adaptador de Baileys. Está claramente etiquetado como
+herramienta de pruebas y jamás se hace pasar por una conexión real.
+
+<a id="pruebas"></a>
+
+---
+
+## 𓆩 ✓ 𓆪 Pruebas
+
+```bash
+npm test
+# tests 143 · pass 143 · fail 0 · ~2 s
+```
+
+Cubren: registro y duplicados, aprobación por respuesta/folio/nombre, resolución atómica
+(una solicitud no se ejecuta dos veces), reservas y su expiración, cambios de personaje,
+parejas bidireccionales, AFK y su enfriamiento, inactivos, configuración por grupo,
+warns con expulsión automática, expulsión/ban con confirmación, re-expulsión al reingresar,
+cierre de grupo, aislamiento entre grupos, enmascarado de números en todas las salidas,
+rate-limit, expiración de confirmaciones, robustez ante errores de envío, las 71 plantillas
+de diseño y la API web completa (auth, sub-bots, grupos, solicitudes, SSE, estáticos).
+
+---
+
+## 𓆩 禊 𓆪 Seguridad
+
+1. Permisos comprobados **antes** de ejecutar cada comando.
+2. Registros duplicados imposibles (clave primaria + comprobación).
+3. Un personaje no puede pertenecer a dos usuarios (índice único + asignación condicional).
+4. Solicitudes repetidas bloqueadas por índice parcial.
+5. Toda entrada se valida y sanitiza (longitud, caracteres, rangos, jids).
+6. Los errores se capturan por comando y por socket: el bot no se cae.
+7. Nadie edita datos ajenos: las escrituras usan el jid del autor.
+8. Confirmación obligatoria en `.unreg`, `.liberar`, `.terminar`, `.expulsar` y `.ban`.
+9. Anti-spam: 6 comandos/10 s, enfriamientos por comando y bloqueo temporal de 30 s.
+10. `sessions/`, `data/`, `logs/` y `.env` fuera de git, con permisos `0700`;
+    la contraseña del panel se compara en tiempo constante y las sesiones expiran.
+11. Los números de teléfono **nunca** aparecen completos en mensajes públicos (`52•••••••78`).
+12. Al salir del grupo se libera personaje, se rompen parejas, se cancelan solicitudes y
+    se limpia el AFK; si la persona vuelve, su ficha se restaura.
+
+---
+
+## 𓆩 ⚠ 𓆪 Limitaciones que debes conocer
+
+- `.add` casi nunca funciona: WhatsApp respeta la privacidad del destino (código `403`).
+  Usa `.invite` y comparte el enlace del grupo.
+- Los botones interactivos ya no se renderizan: las confirmaciones son por texto.
+- Un número no puede estar vinculado a dos sesiones a la vez → 3 sub-bots = 3 números.
+- El pairing code caduca en ~60 segundos.
+- Baileys es un cliente **no oficial**: existe riesgo de suspensión del número. Usa un
+  número secundario y no hagas spam.
+- Expulsar, cerrar el grupo o leer su enlace requiere que el bot sea admin del grupo.
+
+Detalle completo, con los códigos de error reales y sus mitigaciones:
+**[docs/LIMITACIONES.md](docs/LIMITACIONES.md)**.
+
+---
+
+## 𓆩 ☕ 𓆪 Documentación
+
+| Documento | Contenido |
+|---|---|
+| [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md) | Arquitectura, tecnologías, estructura, base de datos, funcionamiento por sistema, limitaciones y orden de desarrollo |
+| [docs/BASE_DE_DATOS.md](docs/BASE_DE_DATOS.md) | Esquema campo por campo, índices, invariantes y copias de seguridad |
+| [docs/COMANDOS.md](docs/COMANDOS.md) | Los 52 comandos con permisos, ejemplos, alias y límites |
+| [docs/LIMITACIONES.md](docs/LIMITACIONES.md) | Lo que WhatsApp no permite y cómo lo resuelve el bot |
+
+---
+
+## 𓆩 𓂃 𓆪 Despliegue rápido (VPS)
+
+```bash
+git clone https://github.com/lyanvalentinmail-prog/Project.git versova
+cd versova && npm install --omit=dev
+cp .env.example .env      # OWNER_NUMBERS, DASHBOARD_PASSWORD, WEB_PORT
+npm run doctor            # verifica conectividad con WhatsApp
+npm start                 # o con pm2: pm2 start src/index.js --name versova
+```
+
+Recomendado detrás de un proxy inverso con HTTPS (nginx/caddy) y con `DASHBOARD_PASSWORD`
+fuerte. Copia de seguridad: `data/versova.db` y `sessions/`.
+
+---
+
+<div align="center">
+
+𝖸𝗈𝗎𝗋 𝗋𝗈𝗅𝖾 𝗂𝗌 𝗒𝗈𝗎𝗋 𝗂𝖽𝖾𝗇𝗍𝗂𝗍𝗒.
+𝖸𝗈𝗎𝗋 𝗍𝖾𝖺𝗆 𝗂𝗌 𝗒𝗈𝗎𝗋 𝗌𝗍𝗈𝗋𝗒.
+
+⌞ ≪⁹⁹ ⁙ 𝐕𝐄́𝐑𝐒𝐎𝐕𝐀 · est. 2026
+
+</div>
