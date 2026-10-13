@@ -10,7 +10,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { env } from '../config/env.js';
 import { BotClient } from './bot-client.js';
-import { instancesRepo, groupsRepo, auditRepo } from '../db/index.js';
+import { instancesRepo, groupsRepo, auditRepo, activationKeysRepo, normalizePrefix } from '../db/index.js';
 import { scoped } from './logger.js';
 
 const log = scoped('manager');
@@ -23,6 +23,8 @@ export function normalizePhone(input) {
   if (digits.startsWith('0')) return { ok: false, reason: 'Quita el 0 inicial y usa el código de país (ej. 52 para México, 34 para España).' };
   return { ok: true, value: digits };
 }
+
+export { normalizePrefix };
 
 export class BotManager extends EventEmitter {
   constructor({ maxInstances = env.maxInstances } = {}) {
@@ -77,18 +79,23 @@ export class BotManager extends EventEmitter {
 
   /* ── ciclo de vida ─────────────────────────────────────────── */
 
-  /** Crea un sub-bot (máximo 3). No lo conecta todavía. */
-  createInstance({ name, phone, pairingMode = 'qr' }) {
-    if (instancesRepo.count() >= this.maxInstances) {
-      return { ok: false, error: `Ya tienes el máximo de sub-bots permitidos (${this.maxInstances}). Borra uno para crear otro.` };
-    }
+  /**
+   * Crea un sub-bot (máximo 3). Nace DESCONECTADO y SIN ACTIVAR:
+   * la activación exige la clave que el bot entrega con `.key` en WhatsApp.
+   */
+  createInstance({ name, phone, pairingMode = 'qr', prefix = '.' }) {
     const phoneCheck = normalizePhone(phone);
     if (!phoneCheck.ok) return { ok: false, error: phoneCheck.reason };
+    const prefixCheck = normalizePrefix(prefix);
+    if (!prefixCheck.ok) return { ok: false, error: prefixCheck.reason };
     if (!['qr', 'pairing'].includes(pairingMode)) {
       return { ok: false, error: 'El modo de vinculación debe ser "qr" o "pairing".' };
     }
     if (instancesRepo.byPhone(phoneCheck.value)) {
       return { ok: false, error: 'Ese número ya tiene un sub-bot creado. Un número no puede estar vinculado dos veces.' };
+    }
+    if (instancesRepo.count() >= this.maxInstances) {
+      return { ok: false, error: `Ya tienes el máximo de sub-bots permitidos (${this.maxInstances}). Borra uno para crear otro.` };
     }
 
     const cleanName = String(name ?? '').trim().slice(0, 40) || `Versova ${instancesRepo.count() + 1}`;
@@ -101,13 +108,42 @@ export class BotManager extends EventEmitter {
         phone: phoneCheck.value,
         pairingMode,
         sessionDir,
+        prefix: prefixCheck.value,
+        activated: false,
+        autostart: false,
       });
-      auditRepo.log({ instanceId: instance.id, action: 'instance.created', detail: { name: cleanName, pairingMode } });
+      auditRepo.log({
+        instanceId: instance.id,
+        action: 'instance.created',
+        detail: { name: cleanName, pairingMode, prefix: prefixCheck.value, activated: false },
+      });
       return { ok: true, instance };
     } catch (error) {
       fs.rmSync(sessionDir, { recursive: true, force: true });
       return { ok: false, error: `No se pudo crear el sub-bot: ${error.message}` };
     }
+  }
+
+  /**
+   * Activa un sub-bot con la clave que el bot entregó con `.key` en WhatsApp.
+   * La clave se guarda en la base de datos al generarla y es de un solo uso.
+   */
+  activate(id, key) {
+    const instance = instancesRepo.byId(id);
+    if (!instance) return { ok: false, error: 'Ese sub-bot no existe.' };
+    if (instance.activated) return { ok: true, instance, already: true };
+
+    const redeemed = activationKeysRepo.redeem(key, id);
+    if (!redeemed.ok) return { ok: false, error: redeemed.reason };
+
+    instancesRepo.setActivated(id, true);
+    instancesRepo.setAutostart(id, true);
+    auditRepo.log({
+      instanceId: id,
+      action: 'instance.activated',
+      detail: { name: instance.name, keyId: redeemed.row?.id ?? null },
+    });
+    return { ok: true, instance: instancesRepo.byId(id) };
   }
 
   /** Arranca (o reinicia) la conexión de un sub-bot. */
@@ -185,12 +221,23 @@ export class BotManager extends EventEmitter {
     return code ? { ok: true, code } : { ok: false, error: 'WhatsApp no devolvió un código nuevo.' };
   }
 
+  /** Cambia el prefijo de comandos del sub-bot (# - + . /). */
+  setPrefix(id, prefix) {
+    const instance = instancesRepo.byId(id);
+    if (!instance) return { ok: false, error: 'Ese sub-bot no existe.' };
+    const check = normalizePrefix(prefix, instance.prefix);
+    if (!check.ok) return { ok: false, error: check.reason };
+    instancesRepo.setPrefix(id, check.value);
+    auditRepo.log({ instanceId: id, action: 'instance.prefix', detail: { from: instance.prefix, to: check.value } });
+    return { ok: true, instance: instancesRepo.byId(id), prefix: check.value };
+  }
+
   /* ── arranque global ───────────────────────────────────────── */
 
-  /** Arranca todas las instancias con autostart y credenciales guardadas. */
+  /** Arranca las instancias activadas con autostart (los bots nacen desconectados). */
   async startAll() {
     this.started = true;
-    const instances = instancesRepo.all().filter((i) => i.autostart);
+    const instances = instancesRepo.all().filter((i) => i.autostart && i.activated);
     const results = [];
     for (const instance of instances) {
       // eslint-disable-next-line no-await-in-loop

@@ -1,7 +1,7 @@
 # 𓆩 ☕ 𓆪 VÉRSOVA — Diseño de la base de datos
 
 Motor: **SQLite** (`better-sqlite3`) en modo **WAL**.
-Archivo: `data/versova.db` (fuera de git). Esquema v1.
+Archivo: `data/versova.db` (fuera de git). Esquema v3.
 
 Reglas generales:
 
@@ -26,7 +26,10 @@ bot_instances 1───N groups 1───N users 1───0..1 roles
                         └──N audit_log
 
 pending_confirmations (independiente, con expiración)
-meta (versión de esquema, contraseña del panel, fecha de instalación)
+activation_keys (claves `.key` de un solo uso para activar bots)
+command_stats + counters (estadísticas reales del panel)
+web_tickets + web_users + plans + coupons (datos de la web, en la misma BD)
+meta (versión de esquema, fecha de instalación)
 ```
 
 ---
@@ -35,7 +38,7 @@ meta (versión de esquema, contraseña del panel, fecha de instalación)
 
 | Campo | Tipo | Descripción |
 |---|---|---|
-| `key` | TEXT PK | `schema_version`, `installed_at`, `dashboard_password` |
+| `key` | TEXT PK | `schema_version`, `installed_at` |
 | `value` | TEXT | Valor |
 | `updated_at` | INTEGER | Última actualización |
 
@@ -49,11 +52,14 @@ meta (versión de esquema, contraseña del panel, fecha de instalación)
 | `name` | TEXT | Nombre visible en el panel |
 | `phone` | TEXT UNIQUE | Número internacional sin `+` (un número = un sub-bot) |
 | `pairing_mode` | TEXT | `'qr'` o `'pairing'` |
+| `prefix` | TEXT | Prefijo de comandos de ESTE bot: `#` `-` `+` `.` `/` (esquema v3) |
+| `activated` | INTEGER | 0 = sin activar (solo responde `.key`), 1 = activado con la clave (v3) |
+| `activated_at` | INTEGER | Cuándo se canjeó la clave de activación (v3) |
 | `status` | TEXT | `created · starting · qr · pairing · connecting · open · closed · error · loggedOut` |
 | `wa_jid` | TEXT | jid real asignado por WhatsApp tras vincular |
 | `push_name` | TEXT | Nombre del perfil de WhatsApp |
 | `session_dir` | TEXT | Carpeta de credenciales (`sessions/…`), fuera de git |
-| `autostart` | INTEGER | 1 = arrancar con el proceso |
+| `autostart` | INTEGER | 1 = arrancar con el proceso (solo si `activated = 1`) |
 | `created_at` / `updated_at` / `last_connected_at` | INTEGER | Marcas de tiempo |
 | `last_error` | TEXT | Último error real reportado (se muestra en el panel) |
 
@@ -225,6 +231,47 @@ Sobreviven a un reinicio (están en disco) y se purgan cada minuto.
 | `created_at` | INTEGER | Cuándo |
 
 Índices por `(group_id, created_at DESC)` y `created_at DESC`. Se purga lo anterior a 90 días.
+
+---
+
+## `activation_keys` — activación de bots (v3)
+
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `code` | TEXT UNIQUE | Cuerpo de 8 caracteres (alfabeto sin `0/O/1/I/L`), se muestra como `ABCD-2345` |
+| `creator_jid` | TEXT | Quién envió `.key` desde WhatsApp |
+| `creator_instance` | TEXT | Bot que generó la clave |
+| `created_at` / `expires_at` | INTEGER | Caducan a los 10 min |
+| `used_at` | INTEGER | Cuándo se canjeó en el panel |
+| `used_by_instance` | TEXT | Sub-bot que quedó activado con ella |
+
+Una clave es de **un solo uso**: la genera `.key` en WhatsApp y la canjea el panel web
+(`POST /api/instances/:id/activate`) para marcar el bot como `activated`.
+
+---
+
+## `command_stats` · `counters` — estadísticas reales (v3)
+
+| Tabla | Campos | Uso |
+|---|---|---|
+| `command_stats` | `command` PK, `count`, `last_used_at` | Cuántas veces se ejecutó cada comando (Top comandos del panel) |
+| `counters` | `name` PK, `value`, `updated_at` | Contadores sueltos: `messages`, `apiRequests` |
+
+Lo que la web muestra en Métricas sale de aquí o de consultas reales: **nada de datos inventados**.
+
+---
+
+## `web_tickets` · `web_users` · `plans` · `coupons` — datos de la web (v2–v3)
+
+| Tabla | Uso |
+|---|---|
+| `web_tickets` | Tickets del centro de soporte (asunto, mensaje, estado `Abierto/Respondido/Cerrado`) |
+| `web_users` | Cuentas de la tienda (email, username, hash de contraseña, créditos, plan, API key) |
+| `plans` | Planes de créditos mostrados en la tienda (precio, créditos, features en JSON) |
+| `coupons` / `coupon_uses` / `credit_transactions` | Cupones y movimientos de créditos |
+
+La web y los bots comparten la misma base de datos: lo que ves en el panel son filas reales.
 
 ---
 

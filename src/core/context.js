@@ -5,12 +5,12 @@
  * y es el ÚNICO lugar que ejecuta efectos sobre WhatsApp
  * (enviar mensajes, expulsar, cambiar ajustes del grupo).
  */
-import { usersRepo, groupsRepo, requestsRepo, auditRepo } from '../db/index.js';
+import { usersRepo, groupsRepo, requestsRepo, auditRepo, instancesRepo } from '../db/index.js';
 import { isBotOwner, rankOf, RANK, RANK_LABEL } from '../security/permissions.js';
 import { normalizeJid, isGroupJid, maskPhone } from '../utils/ids.js';
 import { chunkText } from '../utils/text.js';
 import { ensureGroup, invalidateGroupCache } from './group-sync.js';
-import { renderResult } from '../design/index.js';
+import { renderResult, setRenderPrefix } from '../design/index.js';
 
 /* ═══════════════════════════════════════════════════════════════
    Lectura del mensaje de WhatsApp
@@ -96,13 +96,17 @@ export async function createContext({ raw, instance, client }) {
   const messageId = raw.key?.id ?? null;
   const fromMe = Boolean(raw.key?.fromMe);
 
+  // fila fresca de la instancia: el panel puede activarla/cambiar su
+  // prefijo mientras el bot está conectado y el contexto lo refleja
+  const instanceRow = (instance?.id ? instancesRepo.byId(instance.id) : null) ?? instance;
+
   const text = extractText(m);
   const mentions = extractMentions(m);
   const quoted = extractQuoted(m);
 
   let groupCtx = null;
   if (isGroup) {
-    const synced = await ensureGroup({ client, instanceId: instance.id, groupJid: chatJid });
+    const synced = await ensureGroup({ client, instanceId: instanceRow.id, groupJid: chatJid });
     const row = synced.group;
     groupCtx = {
       groupId: row.group_id ?? chatJid,
@@ -146,7 +150,7 @@ export async function createContext({ raw, instance, client }) {
     // grupo
     group: groupCtx,
     // bot
-    instance,
+    instance: instanceRow,
     bot: { jid: normalizeJid(client.jid), pushName: client.pushName },
     client,
     // helpers
@@ -177,6 +181,8 @@ export function resolveTarget(ctx, to) {
  * Parte automáticamente los mensajes largos.
  */
 export async function sendMessage(ctx, to, payload, options = {}) {
+  // cada sub-bot puede tener su propio prefijo: se fija antes de renderizar
+  setRenderPrefix(ctx?.instance?.prefix ?? ctx?.prefix);
   const text = typeof payload === 'string' ? payload : renderResult(payload);
   if (!text) return null;
 

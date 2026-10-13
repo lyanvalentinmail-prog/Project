@@ -6,18 +6,54 @@ import { newId } from '../../utils/ids.js';
 
 const TABLE = 'bot_instances';
 
+/** Prefijos de comando que un sub-bot puede elegir. */
+export const ALLOWED_PREFIXES = Object.freeze(['#', '-', '+', '.', '/']);
+
+/** Normaliza y valida un prefijo. Devuelve `{ ok, value }` o `{ ok, reason }`. */
+export function normalizePrefix(input, fallback = '.') {
+  const raw = String(input ?? '').trim();
+  if (!raw) return { ok: true, value: fallback };
+  if (ALLOWED_PREFIXES.includes(raw)) return { ok: true, value: raw };
+  return {
+    ok: false,
+    reason: `El prefijo debe ser uno de: ${ALLOWED_PREFIXES.join('  ')} (recibido "${raw.slice(0, 4)}").`,
+  };
+}
+
 export const instancesRepo = {
-  /** Crea una instancia. Lanza si el número ya está en uso. */
-  create({ name, phone, pairingMode = 'qr', sessionDir }) {
+  /**
+   * Crea una instancia. Por defecto queda DESCONECTADA y SIN ACTIVAR:
+   * la activación exige la clave que el bot entrega con `.key` en WhatsApp.
+   */
+  create({
+    name,
+    phone,
+    pairingMode = 'qr',
+    sessionDir,
+    prefix = '.',
+    activated = false,
+    autostart = false,
+  }) {
     const id = newId(10);
     const now = Date.now();
     getDb()
       .prepare(
         `INSERT INTO ${TABLE}
-           (id, name, phone, pairing_mode, status, session_dir, autostart, created_at, updated_at)
-         VALUES (@id, @name, @phone, @pairingMode, 'created', @sessionDir, 1, @now, @now)`
+           (id, name, phone, pairing_mode, status, session_dir, prefix, activated, activated_at, autostart, created_at, updated_at)
+         VALUES (@id, @name, @phone, @pairingMode, 'created', @sessionDir, @prefix, @activated, @activatedAt, @autostart, @now, @now)`
       )
-      .run({ id, name, phone, pairingMode, sessionDir, now });
+      .run({
+        id,
+        name,
+        phone,
+        pairingMode,
+        sessionDir,
+        prefix,
+        activated: activated ? 1 : 0,
+        activatedAt: activated ? now : null,
+        autostart: autostart ? 1 : 0,
+        now,
+      });
     return this.byId(id);
   },
 
@@ -69,6 +105,21 @@ export const instancesRepo = {
     getDb()
       .prepare(`UPDATE ${TABLE} SET name = ?, updated_at = ? WHERE id = ?`)
       .run(String(name).slice(0, 40), Date.now(), id);
+  },
+
+  setPrefix(id, prefix) {
+    getDb()
+      .prepare(`UPDATE ${TABLE} SET prefix = ?, updated_at = ? WHERE id = ?`)
+      .run(prefix, Date.now(), id);
+  },
+
+  /** Marca el bot como activado (tras canjear la clave de `.key`). */
+  setActivated(id, value = true) {
+    getDb()
+      .prepare(
+        `UPDATE ${TABLE} SET activated = ?, activated_at = CASE WHEN ? = 1 THEN ? ELSE activated_at END, updated_at = ? WHERE id = ?`
+      )
+      .run(value ? 1 : 0, value ? 1 : 0, Date.now(), Date.now(), id);
   },
 
   remove(id) {

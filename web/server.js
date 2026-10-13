@@ -34,17 +34,17 @@ function broadcast(event, data) {
 /**
  * @param {object} params
  * @param {import('../src/core/bot-manager.js').BotManager} params.manager
- * @param {string} params.password
  * @param {number} [params.port]
  * @param {string} [params.host]
  */
-export async function createWebServer({ manager, password, port = env.webPort, host = env.webHost }) {
+export async function createWebServer({ manager, port = env.webPort, host = env.webHost }) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', true);
   app.use(express.json({ limit: '256kb' }));
 
-  const auth = createAuth({ password: password || '' });
+  // El panel está abierto por diseño: auth es una puerta neutra.
+  const auth = createAuth();
 
   /* ── health check estándar (/health y /api/health) ────────── */
   app.get('/health', (_req, res) => {

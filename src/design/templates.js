@@ -8,11 +8,12 @@
  * devuelven texto plano listo para WhatsApp.
  */
 import { IDENTITY } from '../config/identity.js';
-import { SYM, RULE, KAOMOJI, kv, bullet, cmd, inlineCmd, footer, signature, frame, statusLine, bar, fancyNumber, section, versovaHeader, mention, miniHeader } from './theme.js';
+import { SYM, RULE, KAOMOJI, kv, bullet, cmd, inlineCmd, footer, signature, frame, statusLine, bar, fancyNumber, section, versovaHeader, mention, miniHeader, currentPrefix } from './theme.js';
 import { formatDate, formatDateLong, formatDateTime, formatDuration, timeAgo } from '../utils/time.js';
 import { maskPhone } from '../utils/ids.js';
 
-const P = IDENTITY.prefix;
+/** Prefijo del sub-bot que está renderizando (se fija antes de cada mensaje). */
+const P = { toString: () => currentPrefix() };
 const line = (n = 22) => '─'.repeat(n);
 
 /* ═══════════════════════════════════════════════════════════════
@@ -994,6 +995,37 @@ export function unknownCommand({ command, suggestion = null }) {
   ]
     .filter(Boolean)
     .join('\n');
+}
+
+/** Clave de activación generada por `.key` (flujo del panel web). */
+export function activationKey({ key, expiresInMin = 10, instanceName = null }) {
+  return [
+    `${SYM.bracketL} ${SYM.star} ${SYM.bracketR} ㅤ𝐶𝑙𝑎𝑣𝑒 ㅤ𝑑𝑒 ㅤ𝑎𝑐𝑡𝑖𝑣𝑎𝑐𝑖𝑜́𝑛`,
+    RULE.night,
+    `ㅤ${SYM.leaf}ㅤTu clave ㅤ⁙ㅤ ${key}`,
+    instanceName ? `ㅤ${SYM.leaf}ㅤBot ㅤ⁙ㅤ ${instanceName}` : null,
+    '',
+    `ㅤ${SYM.scroll}ㅤPégala en el panel web para activar el bot.`,
+    `ㅤ${SYM.leaf}ㅤCaduca en ${expiresInMin} min · un solo uso.`,
+    `ㅤ${SYM.leaf}ㅤTambién sirve ㅤ${inlineCmd('key')} ㅤcon # - + . /`,
+    RULE.night,
+    `ㅤ${KAOMOJI.sparkle}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/** El bot existe pero está SIN ACTIVAR: solo responde `.key`. */
+export function botInactive({ instanceName = null } = {}) {
+  return [
+    `${SYM.bracketL} 🔒 ${SYM.bracketR} ㅤ𝐵𝑜𝑡 ㅤ𝑠𝑖𝑛 ㅤ𝑎𝑐𝑡𝑖𝑣𝑎𝑟`,
+    RULE.blade,
+    instanceName ? `ㅤ${SYM.leaf}ㅤ${instanceName} todavía no está activado.` : `ㅤ${SYM.leaf}ㅤEste bot todavía no está activado.`,
+    `ㅤ${SYM.chain}ㅤEnvía ㅤ${inlineCmd('key')}ㅤ para recibir tu clave.`,
+    `ㅤ${SYM.chain}ㅤLuego pégala en el panel web → Conectar bot.`,
+    RULE.blade,
+    `ㅤ${KAOMOJI.serious}`,
+  ].join('\n');
 }
 
 export function ownerCard({ ownerMasked, team, botName, version, isOwner }) {

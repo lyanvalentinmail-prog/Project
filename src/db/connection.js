@@ -35,6 +35,14 @@ const MIGRATIONS = [
       database.exec(schema);
     },
   },
+  {
+    version: 3,
+    name: 'activación por clave, prefijo por bot, tickets y métricas',
+    up(database) {
+      const schema = fs.readFileSync(path.join(here, 'schema-v3.sql'), 'utf8');
+      database.exec(schema);
+    },
+  },
 ];
 
 /** Devuelve la conexión activa (la crea si aún no existe). */

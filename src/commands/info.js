@@ -23,10 +23,10 @@ export const infoCommands = [
     description: 'Muestra el menú oficial de comandos de VÉRSOVA.',
     example: '.menu',
     groupOnly: false,
-    run: () =>
+    run: (ctx) =>
       ok('menu.main', {
         status: 'ᴏɴʟɪɴᴇ',
-        prefix: IDENTITY.prefix,
+        prefix: ctx.instance?.prefix ?? ctx.prefix ?? IDENTITY.prefix,
         name: IDENTITY.name,
         team: IDENTITY.team,
         version: IDENTITY.version,

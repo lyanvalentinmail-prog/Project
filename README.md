@@ -11,7 +11,7 @@
 
 [![Node](https://img.shields.io/badge/node-%E2%89%A522-8fbc72)](https://nodejs.org)
 [![Baileys](https://img.shields.io/badge/baileys-7.0.0--rc14-c8a27a)](https://github.com/WhiskeySockets/Baileys)
-[![tests](https://img.shields.io/badge/tests-143%20pass-8fbc72)](#pruebas)
+[![tests](https://img.shields.io/badge/tests-154%20pass-8fbc72)](#pruebas)
 [![version](https://img.shields.io/badge/versi%C3%B3n-1.0-e8c9a0)](#)
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/lyanvalentinmail-prog/Project)
 
@@ -65,41 +65,48 @@ npm start
 Al arrancar verás algo así:
 
 ```
-𓆩 ☕ 𓆪  VÉRSOVA v1.0 · prefijo "."
+𓆩 ☕ 𓆪  VÉRSOVA v1.0 · prefijos # - + . / (por sub-bot)
 Base de datos  ⁙ data/versova.db
-Comandos       ⁙ 52 registrados
+Comandos       ⁙ 53 registrados
 Panel web      ⁙ http://localhost:3000
-⚠ No hay sub-bots creados. Abre el panel web y crea el primero.
+⚠ No hay sub-bots activados. Abre el panel web, crea uno y actívalo con la clave de .key.
 ```
 
 ---
 
-## 𓆩 ♡ 𓆪 Vincular un número (QR o pairing code)
+## 𓆩 ♡ 𓆪 Crear, activar y vincular un bot
 
 1. Abre el panel: **http://localhost:3000** (en un servidor remoto, el puerto 3000).
-2. Contraseña: la que pusiste en `DASHBOARD_PASSWORD`. Si la dejaste vacía, se genera una
-   aleatoria, se guarda en la base de datos y **se imprime en la consola** al arrancar.
-3. En **Sub-bots → Crear**: nombre, número internacional sin `+` (ej. `5215512345678`)
-   y método de vinculación.
-4. **QR** → se muestra el código en la ventana y se renueva solo; escanéalo en
-   *WhatsApp → Ajustes → Dispositivos vinculados → Vincular un dispositivo*.
-5. **Pairing code** → aparece un código `ABCD-1234`; en el teléfono ve a
-   *Dispositivos vinculados → Vincular un dispositivo → Vincular con el número de teléfono*
-   y escríbelo (caduca en ~60 s; puedes regenerarlo).
-6. Cuando el estado pase a **conectado**, añade el bot a tu grupo de rol y escribe `.menu`.
+   **No hay contraseña**: el panel está abierto por diseño.
+2. En **Registrar bot**: nombre, **prefijo de comandos** (`#` `-` `+` `.` `/`),
+   número internacional sin `+` (ej. `5215512345678`) y método de vinculación.
+   El bot se crea **desconectado**.
+3. **Actívalo con `.key`**: pulsa *Conectar en WhatsApp*, envía `.key` desde WhatsApp
+   al bot (o a cualquier bot conectado de la plataforma) y el bot te devolverá una
+   clave de un solo uso (ej. `ABCD-2345`). Pégala en el panel → **Activar bot**.
+4. **Vincula el número**: los QR y pairing codes son **reales** (los emite WhatsApp).
+   - **QR** → se muestra en la ventana y se renueva solo; escanéalo en
+     *WhatsApp → Ajustes → Dispositivos vinculados → Vincular un dispositivo*.
+   - **Pairing code** → aparece un código `ABCD-2345`; en el teléfono ve a
+     *Dispositivos vinculados → Vincular un dispositivo → Vincular con el número de teléfono*
+     y escríbelo (caduca en ~60 s; puedes regenerarlo).
+5. Cuando el estado pase a **en línea**, añade el bot a tu grupo de rol y escribe
+   `«prefijo»menu` (ej. `.menu` o `#menu` según el prefijo elegido).
 
 Puedes repetir el proceso hasta **3 sub-bots** con números distintos. Cada uno tiene su
-carpeta de credenciales en `sessions/` (fuera de git).
+carpeta de credenciales en `sessions/` (fuera de git) y su propio prefijo.
 
 ---
 
-## 𓆩 ⛓️ 𓆪 Comandos (52)
+## 𓆩 ⛓️ 𓆪 Comandos (53)
 
-Prefijo `.` · idioma español · `.menu` muestra el menú oficial del team y `.help <sección>`
+Cada bot usa el **prefijo que elegiste al crearlo** (`#` `-` `+` `.` `/`, por defecto `.`)
+· idioma español · `«prefijo»menu` muestra el menú oficial del team y `«prefijo»help <sección>`
 el detalle. Referencia completa en **[docs/COMANDOS.md](docs/COMANDOS.md)**.
 
 | Sección | Comandos |
 |---|---|
+| **Activación** | `.key` (funciona con cualquier prefijo: `#key` `+key`…) |
 | **Información** | `.menu` `.help` `.ping` `.botinfo` `.owner` |
 | **Registro** | `.reg <nombre.edad>` `.unreg` `.editar <nombre.edad>` `.ficha` |
 | **Personajes** | `.rol <personaje>` `.cambiarol <personaje>` `.roles` `.mirol` `.reservar <personaje>` `.reservas` `.liberarreserva` `.liberar` `.cancelarsolicitud` |
@@ -130,7 +137,7 @@ src/
 web/                      panel: servidor Express, API REST, SSE, auth y frontend
 tools/simulator.js        banco de pruebas de comandos en terminal (NO es el bot real)
 scripts/                  doctor, inspección y reinicio de la base de datos
-tests/                    143 pruebas con node:test
+tests/                    154 pruebas con node:test
 docs/                     arquitectura, base de datos, comandos y limitaciones
 ```
 
@@ -147,7 +154,7 @@ Por eso se puede probar todo sin vincular un número.
 | `npm start` | Bot + panel web |
 | `npm run bot` | Solo el bot (sin panel) |
 | `npm run web` | Solo el panel web |
-| `npm test` | 143 pruebas (servicios, router, base de datos, API) |
+| `npm test` | 154 pruebas (servicios, router, base de datos, API) |
 | `npm run sim` | Simulador interactivo de comandos en terminal |
 | `npm run sim -- --demo` | Demo guiada con 81 escenarios reales |
 | `npm run doctor` | Diagnóstico: Node, dependencias, BD, carpetas, `.env`, conectividad |
@@ -175,7 +182,7 @@ herramienta de pruebas y jamás se hace pasar por una conexión real.
 
 ```bash
 npm test
-# tests 143 · pass 143 · fail 0 · ~2 s
+# tests 154 · pass 154 · fail 0 · ~3 s
 ```
 
 Cubren: registro y duplicados, aprobación por respuesta/folio/nombre, resolución atómica
@@ -200,7 +207,7 @@ de diseño y la API web completa (auth, sub-bots, grupos, solicitudes, SSE, est�
 8. Confirmación obligatoria en `.unreg`, `.liberar`, `.terminar`, `.expulsar` y `.ban`.
 9. Anti-spam: 6 comandos/10 s, enfriamientos por comando y bloqueo temporal de 30 s.
 10. `sessions/`, `data/`, `logs/` y `.env` fuera de git, con permisos `0700`;
-    la contraseña del panel se compara en tiempo constante y las sesiones expiran.
+    la activación de bots exige la clave de un solo uso que entrega `.key`.
 11. Los números de teléfono **nunca** aparecen completos en mensajes públicos (`52•••••••78`).
 12. Al salir del grupo se libera personaje, se rompen parejas, se cancelan solicitudes y
     se limpia el AFK; si la persona vuelve, su ficha se restaura.
@@ -255,7 +262,8 @@ Puedes desplegar VÉRSOVA en **Render de forma gratuita** con un solo clic usand
 3. En la pantalla de creación del Blueprint, introduce tu número en `OWNER_NUMBERS` (formato internacional sin `+`, ej. `5215512345678`).
 4. Haz clic en **Apply**. Render compilará e iniciará el bot y el panel web automáticamente.
 5. Al terminar el despliegue, abre la URL asignada por Render (ej. `https://versova-bot.onrender.com`).
-6. **Contraseña del panel:** Render genera una contraseña segura automáticamente (`DASHBOARD_PASSWORD`). Puedes verla en la pestaña **Environment** de tu servicio en Render (o en los logs de inicio). También puedes cambiarla por la que desees desde esa misma pestaña.
+6. **Panel abierto:** el dashboard no pide contraseña. Cada bot se activa con la clave
+   de un solo uso que genera el comando `.key` desde WhatsApp.
 7. Inicia sesión en el panel, ve a **Sub-bots → Crear** y vincula tu número mediante **QR** o **Pairing Code**.
 
 ### ⚠ Consideraciones del plan gratuito de Render
@@ -274,13 +282,13 @@ Puedes desplegar VÉRSOVA en **Render de forma gratuita** con un solo clic usand
 ```bash
 git clone https://github.com/lyanvalentinmail-prog/Project.git versova
 cd versova && npm install --omit=dev
-cp .env.example .env      # OWNER_NUMBERS, DASHBOARD_PASSWORD, WEB_PORT
+cp .env.example .env      # OWNER_NUMBERS, WEB_PORT
 npm run doctor            # verifica conectividad con WhatsApp
 npm start                 # o con pm2: pm2 start src/index.js --name versova
 ```
 
-Recomendado detrás de un proxy inverso con HTTPS (nginx/caddy) y con `DASHBOARD_PASSWORD`
-fuerte. Copia de seguridad: `data/versova.db` y `sessions/`.
+Recomendado detrás de un proxy inverso con HTTPS (nginx/caddy). Copia de seguridad:
+`data/versova.db` y `sessions/`.
 
 ---
 

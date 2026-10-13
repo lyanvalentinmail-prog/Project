@@ -6,9 +6,10 @@
  * partir del registro de comandos, así nunca se desincroniza.
  */
 import { IDENTITY } from '../config/identity.js';
-import { SYM, RULE, KAOMOJI, fancyNumber } from './theme.js';
+import { SYM, RULE, KAOMOJI, fancyNumber, currentPrefix } from './theme.js';
 
-const P = IDENTITY.prefix;
+/** Prefijo real del sub-bot (mutable por mensaje). */
+const P = { toString: () => currentPrefix() };
 
 /** Menú principal (`.menu`) — diseño oficial de ◢禍◣ Versova. */
 export function mainMenu({ status = 'ᴏɴʟɪɴᴇ', prefix = P, name = IDENTITY.name, team = IDENTITY.team, version = IDENTITY.version } = {}) {
