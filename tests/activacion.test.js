@@ -40,6 +40,27 @@ test('una clave vencida o inventada no activa nada', () => {
   assert.equal(activationKeysRepo.findValid('ZZZZ-9999'), null);
 });
 
+/* ── pairing code real (`.pairing` / `.key`) ─────────────────── */
+
+test('.pairing explica que no hay código pendiente si no hay vinculación', async () => {
+  const who = person('PairingUser');
+  const { all } = await say(who.jid, '.pairing');
+  const text = plain(all);
+  assert.ok(
+    /pairing|vincul/i.test(text),
+    `la respuesta habla de la vinculación real: ${text}`,
+  );
+  assert.ok(!/[A-Z2-9]{4}-[A-Z2-9]{4}/.test(text), 'no inventa ningún código');
+});
+
+test('.pairing funciona con cualquier prefijo (# - + . /)', async () => {
+  const who = person('PairingUser2');
+  for (const prefix of ['#', '-', '+', '/']) {
+    const { all } = await say(who.jid, `${prefix}pairing`);
+    assert.ok(plain(all).length > 20, `responde a ${prefix}pairing`);
+  }
+});
+
 /* ── bot sin activar ─────────────────────────────────────────── */
 
 test('un bot sin activar solo responde .key y avisa cómo activarlo', async () => {

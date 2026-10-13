@@ -67,7 +67,7 @@ Al arrancar verás algo así:
 ```
 𓆩 ☕ 𓆪  VÉRSOVA v1.0 · prefijos # - + . / (por sub-bot)
 Base de datos  ⁙ data/versova.db
-Comandos       ⁙ 53 registrados
+Comandos       ⁙ 54 registrados
 Panel web      ⁙ http://localhost:3000
 ⚠ No hay sub-bots activados. Abre el panel web, crea uno y actívalo con la clave de .key.
 ```
@@ -82,23 +82,41 @@ Panel web      ⁙ http://localhost:3000
    número internacional sin `+` (ej. `5215512345678`) y método de vinculación.
    El bot se crea **desconectado**.
 3. **Actívalo con `.key`**: pulsa *Conectar en WhatsApp*, envía `.key` desde WhatsApp
-   al bot (o a cualquier bot conectado de la plataforma) y el bot te devolverá una
-   clave de un solo uso (ej. `ABCD-2345`). Pégala en el panel → **Activar bot**.
+   a cualquier bot conectado de la plataforma y el bot te devuelve **dos cosas**:
+   tu clave de un solo uso (ej. `ABCD-2345`) **y el pairing code REAL** que WhatsApp
+   acaba de emitir para el número que estás vinculando. Pega la clave en el panel →
+   **Activar bot**.
 4. **Vincula el número**: los QR y pairing codes son **reales** (los emite WhatsApp).
    - **QR** → se muestra en la ventana y se renueva solo; escanéalo en
      *WhatsApp → Ajustes → Dispositivos vinculados → Vincular un dispositivo*.
-   - **Pairing code** → aparece un código `ABCD-2345`; en el teléfono ve a
-     *Dispositivos vinculados → Vincular un dispositivo → Vincular con el número de teléfono*
-     y escríbelo (caduca en ~60 s; puedes regenerarlo).
+   - **Pairing code** → el panel lo pide a WhatsApp (botón *Pedir pairing code*) y
+     también te lo entrega el bot por WhatsApp con `.pairing` (o `.key`). Aparece como
+     `ABCD-1234`; en el teléfono ve a *Dispositivos vinculados → Vincular un dispositivo
+     → Vincular con el número de teléfono* y escríbelo. Caduca en ~60 s: el panel lo
+     renueva solo y `.pairing` te da otro al momento.
 5. Cuando el estado pase a **en línea**, añade el bot a tu grupo de rol y escribe
    `«prefijo»menu` (ej. `.menu` o `#menu` según el prefijo elegido).
+
+### 𓆩 ✨ 𓆪 Panel web sin parpadeos
+
+El panel se conecta al servidor por SSE y **solo repinta lo que cambió**: si nada se
+mueve, el DOM queda intacto (antes se redibujaba con cada evento de Baileys y parecía
+que la página se recargaba sola cada segundo). Además:
+
+- los formularios **nunca pierden el foco** mientras escribes;
+- el pairing code se muestra con cuenta atrás de 60 s, botón de copiar y renovación
+  automática cuando caduca;
+- el sondeo de respaldo es lento y se detiene cuando la pestaña está oculta;
+- la interfaz usa componentes de **[uiverse.io](https://uiverse.io)** (MIT) adaptados a
+  la paleta del proyecto: botón con glow, loader átomo, switch hamburguesa y tarjetas
+  con icono degradado.
 
 Puedes repetir el proceso hasta **3 sub-bots** con números distintos. Cada uno tiene su
 carpeta de credenciales en `sessions/` (fuera de git) y su propio prefijo.
 
 ---
 
-## 𓆩 ⛓️ 𓆪 Comandos (53)
+## 𓆩 ⛓️ 𓆪 Comandos (54)
 
 Cada bot usa el **prefijo que elegiste al crearlo** (`#` `-` `+` `.` `/`, por defecto `.`)
 · idioma español · `«prefijo»menu` muestra el menú oficial del team y `«prefijo»help <sección>`
@@ -106,7 +124,7 @@ el detalle. Referencia completa en **[docs/COMANDOS.md](docs/COMANDOS.md)**.
 
 | Sección | Comandos |
 |---|---|
-| **Activación** | `.key` (funciona con cualquier prefijo: `#key` `+key`…) |
+| **Activación** | `.key` (clave de un solo uso **+ pairing code real**) · `.pairing` (solo el código) — funcionan con cualquier prefijo: `#key` `+key`… |
 | **Información** | `.menu` `.help` `.ping` `.botinfo` `.owner` |
 | **Registro** | `.reg <nombre.edad>` `.unreg` `.editar <nombre.edad>` `.ficha` |
 | **Personajes** | `.rol <personaje>` `.cambiarol <personaje>` `.roles` `.mirol` `.reservar <personaje>` `.reservas` `.liberarreserva` `.liberar` `.cancelarsolicitud` |

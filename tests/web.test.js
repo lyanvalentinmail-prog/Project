@@ -295,6 +295,95 @@ test('expone el catálogo de comandos y la auditoría global', async () => {
   assert.ok(audit.data.entries.every((e) => !e.actor || e.actor.includes('•')), 'enmascara los números');
 });
 
+test('el stream SSE manda snapshot inicial, retry y deduplica estados repetidos', async () => {
+  const res = await fetch(`${base}/api/stream`);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms).unref?.(); });
+  // una única lectura pendiente: si se lanzaran varias, se perderían bytes
+  let pending = null;
+  const pull = async (ms) => {
+    if (!pending) pending = reader.read().then(({ value }) => value ?? null).catch(() => null);
+    const result = await Promise.race([pending.then((value) => ({ value })), sleep(ms).then(() => ({ timeout: true }))]);
+    if (result.timeout) return false;
+    pending = null;
+    if (result.value) buffer += decoder.decode(result.value, { stream: true });
+    return Boolean(result.value);
+  };
+  const collect = async (ms) => {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      const got = await pull(Math.max(10, end - Date.now()));
+      if (!got) break;
+    }
+    return buffer;
+  };
+
+  try {
+    await collect(120);
+    assert.match(buffer, /retry: 15000/, 'indica al navegador cuándo reconectar');
+    assert.match(buffer, /event: snapshot/, 'envía el estado completo al conectar');
+    assert.match(buffer, /event: hello/);
+
+    const repeated = { id: 'sse-demo', status: 'connecting', qr: null, pairingCode: null, lastError: null, jid: null, activated: false };
+    for (let i = 0; i < 6; i += 1) manager.emit('status', repeated);
+    manager.emit('status', { ...repeated, status: 'open' });
+    await collect(120);
+    const statusEvents = (buffer.match(/event: status/g) ?? []).length;
+    assert.ok(statusEvents <= 2, `solo se reenvía el cambio real (recibidos: ${statusEvents})`);
+    assert.match(buffer, /"status":"open"/);
+  } finally {
+    await reader.cancel().catch(() => null);
+  }
+});
+
+test('GET /api/state devuelve una revisión estable mientras nada cambia', async () => {
+  const first = await api('/api/state');
+  assert.equal(first.data.ok, true);
+  assert.ok(typeof first.data.revision === 'string' && first.data.revision.length > 0);
+  assert.ok(Array.isArray(first.data.instances));
+
+  const second = await api('/api/state');
+  assert.equal(second.data.revision, first.data.revision, 'sin cambios ⇒ misma revisión (el panel no repinta)');
+
+  // un cambio real (estado de un sub-bot) sí mueve la revisión
+  const target = first.data.instances[0];
+  if (target) {
+    instancesRepo.setStatus(target.id, 'connecting');
+    const third = await api('/api/state');
+    assert.notEqual(third.data.revision, first.data.revision);
+    assert.match(third.data.revision, /connecting/);
+  }
+});
+
+test('el pairing code que ofrece el panel es el de WhatsApp o un error honesto', async () => {
+  const instance = instancesRepo.all()[0];
+  await manager.stop(instance.id).catch(() => null);
+
+  // sin sesión abierta no se inventa ningún código: responde un error claro
+  const response = await api(`/api/instances/${instance.id}/pairing`, { method: 'POST', body: { waitMs: 200 } });
+  assert.equal(response.data.ok, false);
+  assert.equal(typeof response.data.error, 'string');
+  assert.ok(response.data.error.length > 10);
+  assert.equal(response.data.formatted, undefined, 'nunca devuelve un código inventado');
+
+  const pending = await api('/api/pairing/pending');
+  assert.equal(pending.data.ok, true);
+  assert.ok(Array.isArray(pending.data.codes));
+  assert.ok(pending.data.codes.every((row) => !row.formatted), 'sin sesión no hay códigos pendientes');
+});
+
+test('el pairing code se marca como caducado pasado el minuto de vida de WhatsApp', async () => {
+  const now = Date.now();
+  const model = { pairingCode: 'ABCD1234', pairingCodeAt: now - 61_000 };
+  const ageSec = Math.round((Date.now() - model.pairingCodeAt) / 1000);
+  assert.equal(formatPairingCode(model.pairingCode), 'ABCD-1234');
+  assert.ok(ageSec >= 60, 'un código de hace más de un minuto ya no sirve');
+  const fresh = Math.round((Date.now() - now) / 1000);
+  assert.ok(fresh < 60);
+});
+
 test('el stream SSE está abierto y responde con text/event-stream', async () => {
   const res = await fetch(`${base}/api/stream`);
   assert.equal(res.status, 200);

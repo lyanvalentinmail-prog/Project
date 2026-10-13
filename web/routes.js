@@ -37,6 +37,87 @@ export const formatPairingCode = (code) =>
 /** Recuento real de filas por tabla (nada de datos inventados). */
 const dbCounts = () => statsRepo.tableCounts();
 
+/**
+ * CPU real del proceso: `os.cpus()` devuelve el acumulado desde el
+ * arranque, así que se mide por diferencia entre dos lecturas.
+ */
+function sampleCpu() {
+  const cpus = os.cpus();
+  let used = 0;
+  let total = 0;
+  for (const cpu of cpus) {
+    const times = cpu.times;
+    used += times.user + times.nice + times.sys + times.irq;
+    total += times.user + times.nice + times.sys + times.irq + times.idle;
+  }
+  return { used, total, at: Date.now(), cores: cpus.length, model: cpus[0]?.model?.trim() ?? 'desconocido' };
+}
+
+/** Sub-bot en formato público (sin datos sensibles). */
+export const publicInstance = (row) => ({
+  id: row.id,
+  name: row.name,
+  phone: row.phone,
+  phoneMasked: maskPhone(row.phone),
+  pairingMode: row.pairing_mode ?? (row.pairingMode ? 'pairing' : 'qr'),
+  prefix: row.prefix ?? '.',
+  activated: Boolean(row.activated),
+  activatedAt: row.activated_at ?? null,
+  status: row.status,
+  waJid: row.wa_jid ?? row.jid ?? null,
+  pushName: row.push_name ?? row.pushName ?? null,
+  live: Boolean(row.live),
+  autostart: Boolean(row.autostart),
+  createdAt: row.created_at ?? null,
+  lastConnectedAt: row.last_connected_at ?? null,
+  lastError: row.last_error ?? row.lastError ?? null,
+  uptimeMs: row.uptimeMs ?? 0,
+  reconnectAttempts: row.reconnectAttempts ?? 0,
+  pairingCode: row.pairingCode ?? null,
+  pairingFormatted: formatPairingCode(row.pairingCode),
+  pairingCodeAt: row.pairingCodeAt ?? null,
+  qr: row.qr ?? null,
+  groups: row.groups ?? groupsRepo.all(row.id).length,
+});
+
+/**
+ * Estado compacto y estable del panel. Se usa en el SSE (evento
+ * `snapshot`) y en `GET /api/state` para que el cliente pueda comparar
+ * `revision` y NO volver a pintar si nada cambió.
+ */
+export function buildStateSnapshot(manager) {
+  const instances = manager.list().map((row) => publicInstance({ ...row, live: row.live }));
+  const stats = manager.stats();
+  const grouped = groupsRepo.all();
+  const payload = {
+    ok: true,
+    revision: '',
+    instances,
+    stats: {
+      ...stats,
+      groups: grouped.length,
+      pendingPairing: manager.pendingPairingCodes({ onlyFresh: true }).length,
+    },
+    at: Date.now(),
+  };
+  payload.revision = `${instances.map((i) => `${i.id}:${i.status}:${i.activated ? 1 : 0}:${i.pairingCode ? 'c' : '-'}${i.uptimeMs ? 'u' : '-'}`).join(',')}|${stats.connected}|${stats.pending}|${payload.stats.pendingPairing}`;
+  return payload;
+}
+
+let lastCpuSample = null;
+
+/** Uso de CPU desde la última llamada (%, 1 decimal). */
+function cpuUsagePercent() {
+  const now = sampleCpu();
+  const previous = lastCpuSample;
+  lastCpuSample = now;
+  if (!previous) return 0;
+  const usedDelta = now.used - previous.used;
+  const totalDelta = now.total - previous.total;
+  if (totalDelta <= 0) return 0;
+  return Math.min(100, Math.round((usedDelta / totalDelta) * 1000) / 10);
+}
+
 export function createRouter({ manager, auth }) {
   const router = express.Router();
 
@@ -127,14 +208,8 @@ export function createRouter({ manager, auth }) {
   /* ── sistema real (servidor, base de datos, conexiones) ────── */
 
   router.get('/system', (_req, res) => {
-    const cpus = os.cpus();
-    let cpuUsed = 0;
-    let cpuTotal = 0;
-    for (const cpu of cpus) {
-      const times = cpu.times;
-      cpuUsed += times.user + times.nice + times.sys + times.irq;
-      cpuTotal += times.user + times.nice + times.sys + times.irq + times.idle;
-    }
+    const cpuInfo = sampleCpu();
+    const usagePercent = cpuUsagePercent();
     const totalMem = os.totalmem();
     const freeMem = os.freemem();
     let dbSize = null;
@@ -153,9 +228,9 @@ export function createRouter({ manager, auth }) {
         node: process.version,
         uptimeMs: Math.round(process.uptime() * 1000),
         cpu: {
-          model: cpus[0]?.model?.trim() ?? 'desconocido',
-          cores: cpus.length,
-          usagePercent: cpuTotal > 0 ? Math.round((cpuUsed / cpuTotal) * 10000) / 100 : 0,
+          model: cpuInfo.model,
+          cores: cpuInfo.cores,
+          usagePercent,
           loadAvg: Math.round(os.loadavg()[0] * 100) / 100,
         },
         memory: {
@@ -185,36 +260,18 @@ export function createRouter({ manager, auth }) {
 
   /* ── sub-bots ───────────────────────────────────────────── */
 
-  const publicInstance = (row) => ({
-    id: row.id,
-    name: row.name,
-    phone: row.phone,
-    phoneMasked: maskPhone(row.phone),
-    pairingMode: row.pairing_mode,
-    prefix: row.prefix ?? '.',
-    activated: Boolean(row.activated),
-    activatedAt: row.activated_at ?? null,
-    status: row.status,
-    waJid: row.wa_jid,
-    pushName: row.push_name,
-    autostart: Boolean(row.autostart),
-    createdAt: row.created_at,
-    lastConnectedAt: row.last_connected_at,
-    lastError: row.last_error,
-    groups: groupsRepo.all(row.id).length,
-  });
-
   router.get('/instances', (_req, res) => {
     res.json({
       ok: true,
       maxInstances: manager.maxInstances,
-      instances: manager.list().map((row) => ({
-        ...publicInstance(row),
-        status: row.status,
-        live: row.live,
-        uptimeMs: row.uptimeMs ?? 0,
-      })),
+      instances: manager.list().map((row) => publicInstance(row)),
     });
+  });
+
+  /** Estado compacto: el panel lo usa para decidir si hay algo que repintar. */
+  router.get('/state', (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(buildStateSnapshot(manager));
   });
 
   router.post('/instances', (req, res) => {
@@ -272,6 +329,37 @@ export function createRouter({ manager, auth }) {
     return res.json({ ok: true, pairingCode: result.code, formatted: formatPairingCode(result.code) });
   });
 
+  /**
+   * Entrega un pairing code REAL de WhatsApp para el sub-bot.
+   * Si la sesión aún no está abierta, la abre y espera el código:
+   * el panel nunca muestra un código inventado.
+   */
+  router.post('/instances/:id/pairing', async (req, res) => {
+    const instance = instancesRepo.byId(req.params.id);
+    if (!instance) return res.status(404).json({ ok: false, error: 'Sub-bot no encontrado.' });
+    if (instance.pairing_mode !== 'pairing') {
+      return res.status(400).json({ ok: false, error: 'Este sub-bot se vincula por QR. Crea otro con vinculación por código.' });
+    }
+    let client = manager.client(req.params.id);
+    if (!client) {
+      const started = await manager.start(req.params.id);
+      if (!started.ok) return res.status(400).json({ ok: false, error: started.error });
+      client = manager.client(req.params.id);
+    }
+    const force = req.body?.force === true;
+    const result = await manager.ensurePairingCode(req.params.id, {
+      force,
+      waitMs: Number(req.body?.waitMs ?? 15_000),
+    });
+    if (!result.ok) return res.status(409).json({ ok: false, error: result.error, retryInSec: 5 });
+    return res.json({ ok: true, ...result });
+  });
+
+  /** Pairing codes reales pendientes (los mismos que entrega el bot con `.key`). */
+  router.get('/pairing/pending', (_req, res) => {
+    res.json({ ok: true, codes: manager.pendingPairingCodes({ onlyFresh: false }), linking: manager.linkingInstances() });
+  });
+
   router.delete('/instances/:id', async (req, res) => {
     const result = await manager.remove(req.params.id);
     if (!result.ok) return res.status(400).json({ ok: false, error: result.error });
@@ -294,6 +382,7 @@ export function createRouter({ manager, auth }) {
       }).catch(() => null);
     }
 
+    const pairingAgeSec = snapshot.pairingCodeAt ? Math.round((Date.now() - snapshot.pairingCodeAt) / 1000) : null;
     return res.json({
       ok: true,
       id: instance.id,
@@ -306,8 +395,13 @@ export function createRouter({ manager, auth }) {
       qr: snapshot.qr ?? null,
       qrDataUrl,
       qrExpiresInSec: Math.round(env.qrTimeoutMs / 1000),
+      qrIssuedAt: snapshot.qrAt ?? null,
       pairingCode: snapshot.pairingCode ?? null,
       pairingFormatted: formatPairingCode(snapshot.pairingCode),
+      pairingCodeAt: snapshot.pairingCodeAt ?? null,
+      pairingAgeSec,
+      // WhatsApp invalida el código ~60 s después de emitirlo
+      pairingExpiresInSec: pairingAgeSec == null ? null : Math.max(0, 60 - pairingAgeSec),
       lastError: snapshot.lastError ?? instance.last_error ?? null,
       jid: snapshot.jid ?? instance.wa_jid ?? null,
       pushName: snapshot.pushName ?? instance.push_name ?? null,

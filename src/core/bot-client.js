@@ -74,7 +74,9 @@ export class BotClient extends EventEmitter {
     this.sock = null;
     this.status = instance.status ?? 'created';
     this.qr = null;
+    this.qrAt = null;
     this.pairingCode = null;
+    this.pairingCodeAt = null;
     this.jid = null;
     this.pushName = null;
     this.lastError = null;
@@ -84,6 +86,11 @@ export class BotClient extends EventEmitter {
     this.pairingRequested = false;
     this.connectedAt = null;
     this.startedAt = Date.now();
+
+    /** Firma del último estado emitido: evita eventos duplicados (y renders basura en el panel). */
+    this._lastSignature = null;
+    /** Petición de pairing code en curso (evita pedir varios a la vez a WhatsApp). */
+    this._pairingRequest = null;
 
     this._sendQueue = Promise.resolve();
     this._metadataCache = new Map();
@@ -101,6 +108,8 @@ export class BotClient extends EventEmitter {
       status: this.status,
       qr: this.qr,
       pairingCode: this.pairingCode,
+      pairingCodeAt: this.pairingCodeAt,
+      pairingAgeMs: this.pairingCodeAt ? Date.now() - this.pairingCodeAt : null,
       jid: this.jid,
       pushName: this.pushName,
       lastError: this.lastError,
@@ -111,13 +120,28 @@ export class BotClient extends EventEmitter {
     };
   }
 
+  /**
+   * Cambia el estado y lo emite SOLO si algo cambió de verdad.
+   * Antes se emitía en cada `connection.update` de Baileys: el panel se
+   * redibujaba sin parar (parecía que la página "se recargaba sola").
+   */
   _setStatus(status, extra = {}) {
     this.status = status;
-    if (extra.qr !== undefined) this.qr = extra.qr;
-    if (extra.pairingCode !== undefined) this.pairingCode = extra.pairingCode;
+    if (extra.qr !== undefined) {
+      this.qr = extra.qr;
+      this.qrAt = extra.qr ? Date.now() : null;
+    }
+    if (extra.pairingCode !== undefined) {
+      this.pairingCode = extra.pairingCode;
+      this.pairingCodeAt = extra.pairingCode ? Date.now() : null;
+    }
     if (extra.error !== undefined) this.lastError = extra.error;
     if (extra.jid) this.jid = extra.jid;
     if (extra.pushName) this.pushName = extra.pushName;
+
+    const signature = [status, this.qr ?? '', this.pairingCode ?? '', this.lastError ?? '', this.jid ?? ''].join('|');
+    if (signature === this._lastSignature) return; // nada nuevo: ni BD ni eventos
+    this._lastSignature = signature;
 
     instancesRepo.setStatus(this.id, status, {
       waJid: extra.jid ?? null,
@@ -126,6 +150,12 @@ export class BotClient extends EventEmitter {
     });
     this.emit('status', this.snapshot());
     this.emit('log', { level: 'info', message: `estado → ${status}`, data: { id: this.id } });
+  }
+
+  /** Fuerza la emisión del estado actual (lo usa el panel al abrir una ventana). */
+  emitStatus() {
+    this.emit('status', this.snapshot());
+    return this.snapshot();
   }
 
   /* ── ciclo de vida ──────────────────────────────────────────── */
@@ -259,7 +289,11 @@ export class BotClient extends EventEmitter {
 
         if (this.stopping) return;
         this.reconnectAttempts += 1;
-        const wait = statusCode === DisconnectReason.restartRequired ? 1000 : backoff(this.reconnectAttempts, 2000, 60_000);
+        // `restartRequired` (515) es normal al vincular un dispositivo nuevo,
+        // pero antes reconectaba cada 1 s: eso hacía que el panel se
+        // redibujara sin parar. Ahora usa el mismo backoff progresivo.
+        const base = statusCode === DisconnectReason.restartRequired ? backoff(this.reconnectAttempts, 2500, 15_000) : backoff(this.reconnectAttempts, 2000, 60_000);
+        const wait = Math.round(base * (0.85 + Math.random() * 0.3));
         this.emit('log', { level: 'info', message: `reconectando en ${Math.round(wait / 1000)}s (intento ${this.reconnectAttempts})` });
         await sleep(wait);
         if (!this.stopping) {
@@ -395,13 +429,62 @@ export class BotClient extends EventEmitter {
   /** Reintenta el pairing code si el usuario no lo usó a tiempo. */
   async refreshPairingCode() {
     if (!this.pairingMode || !this.sock) return null;
-    this.pairingRequested = false;
-    const code = await this.sock.requestPairingCode(this.phone.replace(/[^\d]/g, '')).catch((error) => {
-      this._setStatus('error', { error: `pairing code: ${error?.message ?? error}` });
-      return null;
+    // Una sola petición a la vez: WhatsApp limita cuántos códigos se piden.
+    if (this._pairingRequest) return this._pairingRequest;
+    this._pairingRequest = (async () => {
+      this.pairingRequested = false;
+      try {
+        const code = await this.sock.requestPairingCode(this.phone.replace(/[^\d]/g, ''));
+        if (code) this._setStatus('pairing', { pairingCode: code });
+        return code ?? null;
+      } catch (error) {
+        this._setStatus(this.status === 'open' ? 'open' : 'error', { error: `pairing code: ${error?.message ?? error}` });
+        return null;
+      } finally {
+        this._pairingRequest = null;
+      }
+    })();
+    return this._pairingRequest;
+  }
+
+  /** ¿El código actual sigue siendo utilizable? (WhatsApp los invalida ~60 s). */
+  pairingCodeFresh(maxAgeMs = 45_000) {
+    if (!this.pairingCode || this.status === 'open') return false;
+    return this.pairingCodeAt != null && Date.now() - this.pairingCodeAt <= maxAgeMs;
+  }
+
+  /**
+   * Devuelve un pairing code REAL y utilizable: reutiliza el vigente o pide
+   * uno nuevo a WhatsApp y espera a tenerlo (`waitMs` como máximo).
+   */
+  async ensurePairingCode({ waitMs = 12_000, maxAgeMs = 45_000, force = false } = {}) {
+    if (!this.pairingMode) return { ok: false, reason: 'Este sub-bot se vincula por QR, no por código.' };
+    if (this.status === 'open') return { ok: false, reason: 'Ese sub-bot ya está vinculado con WhatsApp.' };
+    if (this.sock && !force && this.pairingCodeFresh(maxAgeMs)) {
+      return { ok: true, code: this.pairingCode, issuedAt: this.pairingCodeAt, cached: true };
+    }
+    if (!this.sock) {
+      return { ok: false, reason: 'La sesión de vinculación no está abierta todavía. Genera la vinculación desde el panel.' };
+    }
+
+    const pending = new Promise((resolve) => {
+      const onStatus = (snapshot) => {
+        if (snapshot?.pairingCode) {
+          this.off('status', onStatus);
+          clearTimeout(timer);
+          resolve({ ok: true, code: snapshot.pairingCode, issuedAt: snapshot.pairingCodeAt ?? Date.now(), cached: false });
+        }
+      };
+      const timer = setTimeout(() => {
+        this.off('status', onStatus);
+        resolve({ ok: false, reason: 'WhatsApp no devolvió el código a tiempo. Inténtalo otra vez en unos segundos.' });
+      }, waitMs);
+      timer.unref?.();
+      this.on('status', onStatus);
     });
-    if (code) this._setStatus('pairing', { pairingCode: code, qr: null });
-    return code;
+
+    await this.refreshPairingCode();
+    return pending;
   }
 
   /** ¿El bot es admin en este grupo? (consulta fresca) */

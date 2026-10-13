@@ -80,6 +80,16 @@ Caducan a los **60 segundos**. También piden confirmación: `.liberar`, `.termi
 .close / .open        → solo admins pueden escribir / todos
 ```
 
+## 𓆩 🔑 𓆪 ⓪ ACTIVACIÓN (funciona con cualquier prefijo)
+
+| Comando | Permiso | Qué hace |
+|---|---|---|
+| `.key` | todos | Devuelve la **clave de activación** de un solo uso (10 min) y, si hay un sub-bot vinculándose, el **pairing code REAL** que WhatsApp acaba de emitir para ese número.<br />Ejemplo: `.key`<br />Alias: `.clave` · funciona con `#` `-` `+` `.` `/` |
+| `.pairing` | todos | Solo el pairing code real (`ABCD-1234`) del sub-bot que está en vinculación, con su cuenta atrás. Si no hay ninguno, lo explica y no inventa códigos.<br />Ejemplo: `.pairing`<br />Alias: `.codigo` `.código` `.pairingcode` `.vincular` |
+
+> Los códigos salen de WhatsApp (Baileys) y caducan a los ~60 s: pide otro con `.pairing`
+> o pulsa *Pedir pairing code* en el panel. El bot **nunca** muestra un código falso.
+
 ## 𓆩 ☕ 𓆪 ① INFORMACIÓN Y SISTEMA
 
 | Comando | Permiso | Qué hace |

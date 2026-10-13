@@ -94,6 +94,7 @@ export const VIEWS = {
   'sys.owner': T.ownerCard,
   'sys.botInfo': T.botInfo,
   'sys.key': T.activationKey,
+  'sys.pairing': T.pairingCodeCard,
   'sys.inactive': T.botInactive,
 
   // menú
