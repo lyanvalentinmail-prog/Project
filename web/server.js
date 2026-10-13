@@ -44,7 +44,7 @@ export async function createWebServer({ manager, password, port = env.webPort, h
   app.set('trust proxy', true);
   app.use(express.json({ limit: '256kb' }));
 
-  const auth = createAuth({ password });
+  const auth = createAuth({ password: password || '' });
 
   /* ── health check estándar (/health y /api/health) ────────── */
   app.get('/health', (_req, res) => {
@@ -83,8 +83,11 @@ export async function createWebServer({ manager, password, port = env.webPort, h
 
   /* ── estáticos ──────────────────────────────────────────────── */
   app.use(express.static(PUBLIC_DIR, { extensions: ['html'], index: 'index.html' }));
+  
+  // SPA: todas las rutas que no sean /api devuelven index.html
   app.use((req, res, next) => {
     if (req.method !== 'GET' || req.path.startsWith('/api')) return next();
+    if (req.path.includes('.')) return next(); // archivos estáticos ya manejados
     const indexFile = path.join(PUBLIC_DIR, 'index.html');
     if (!fs.existsSync(indexFile)) return next();
     return res.sendFile(indexFile);

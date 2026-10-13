@@ -1,8 +1,9 @@
 /**
  * 𓆩 ☕ 𓆪  VÉRSOVA · API REST del panel web
  * ────────────────────────────────────────────────────────────────
- * Todo responde JSON `{ ok, ... }`. Los errores de validación llevan
- * un mensaje en español listo para mostrar en la interfaz.
+ * Todo responde JSON `{ ok, ... }`. Los endpoints públicos no
+ * requieren autenticación. Los endpoints protegidos usan auth
+ * solo si DASHBOARD_PASSWORD está configurada.
  */
 import express from 'express';
 import QRCode from 'qrcode';
@@ -22,6 +23,8 @@ import * as rolesService from '../src/services/roles.service.js';
 import { buildWebContext, applyWebResult } from './service-bridge.js';
 import { maskPhone } from '../src/utils/ids.js';
 import { formatDuration } from '../src/utils/time.js';
+import { createEndpointsRouter } from './api/index.js';
+import { createCreditsRouter } from './api/credits.js';
 
 /** Formatea el código de emparejamiento como XXXX-XXXX. */
 export const formatPairingCode = (code) =>
@@ -30,7 +33,7 @@ export const formatPairingCode = (code) =>
 export function createRouter({ manager, auth }) {
   const router = express.Router();
 
-  /* ── públicas ───────────────────────────────────────────────── */
+  /* ── públicas (sin auth) ─────────────────────────────────── */
 
   router.get('/health', (_req, res) => {
     res.json({
@@ -42,7 +45,11 @@ export function createRouter({ manager, auth }) {
     });
   });
 
+  // Login solo si hay contraseña configurada
   router.post('/login', (req, res) => {
+    if (!auth.hasPassword) {
+      return res.json({ ok: true, token: 'open', expiresAt: Date.now() + 86_400_000, noPassword: true });
+    }
     const ip = req.ip ?? 'unknown';
     if (auth.isLocked(ip)) {
       return res.status(429).json({ ok: false, error: 'Demasiados intentos fallidos. Espera 5 minutos.' });
@@ -57,12 +64,16 @@ export function createRouter({ manager, auth }) {
     return res.json({ ok: true, token, expiresAt });
   });
 
-  /* ── protegidas ─────────────────────────────────────────────── */
+  // Montar sub-routers de API y créditos (públicos)
+  router.use('/endpoints', createEndpointsRouter());
+  router.use('/credits', createCreditsRouter());
+
+  /* ── protegidas (requieren auth solo si hay password) ────── */
 
   router.use(auth.requireAuth);
 
   router.post('/logout', (req, res) => {
-    auth.revoke(req.token);
+    if (req.token) auth.revoke(req.token);
     res.json({ ok: true });
   });
 
@@ -72,6 +83,7 @@ export function createRouter({ manager, auth }) {
       bot: { name: IDENTITY.name, team: IDENTITY.team, version: IDENTITY.version, prefix: IDENTITY.prefix },
       limits: { maxInstances: manager.maxInstances },
       owner: env.ownerNumbers.map((n) => maskPhone(n)),
+      authRequired: auth.hasPassword,
     });
   });
 
@@ -104,7 +116,7 @@ export function createRouter({ manager, auth }) {
     });
   });
 
-  /* ── sub-bots ───────────────────────────────────────────────── */
+  /* ── sub-bots ───────────────────────────────────────────── */
 
   const publicInstance = (row) => ({
     id: row.id,
@@ -180,7 +192,6 @@ export function createRouter({ manager, auth }) {
     return res.json({ ok: true });
   });
 
-  /** Estado de vinculación: QR en PNG (data URL) o pairing code. */
   router.get('/instances/:id/link', async (req, res) => {
     const instance = instancesRepo.byId(req.params.id);
     if (!instance) return res.status(404).json({ ok: false, error: 'Sub-bot no encontrado.' });
@@ -213,7 +224,7 @@ export function createRouter({ manager, auth }) {
     });
   });
 
-  /* ── grupos ─────────────────────────────────────────────────── */
+  /* ── grupos ─────────────────────────────────────────────── */
 
   router.get('/groups', (req, res) => {
     const instanceId = req.query.instanceId ? String(req.query.instanceId) : null;
@@ -318,7 +329,6 @@ export function createRouter({ manager, auth }) {
     });
   });
 
-  /** Aprobar / rechazar una solicitud desde la web. */
   router.post('/groups/:groupId/requests/:requestId/resolve', async (req, res) => {
     const { decision, reason = null } = req.body ?? {};
     if (!['approve', 'deny'].includes(decision)) {
@@ -346,7 +356,7 @@ export function createRouter({ manager, auth }) {
     }
   });
 
-  /* ── auditoría y comandos ───────────────────────────────────── */
+  /* ── auditoría y comandos ───────────────────────────────── */
 
   router.get('/audit', (req, res) => {
     const limit = Math.min(200, Number(req.query.limit ?? 50));

@@ -26,12 +26,9 @@ const withBot = !hasFlag('--web-only');
 
 /** Contraseña del panel: la del .env o una generada y persistida. */
 function resolveDashboardPassword() {
+  // Si no hay DASHBOARD_PASSWORD, el panel es abierto (sin login)
   if (env.dashboardPassword) return { password: env.dashboardPassword, generated: false };
-  const stored = meta.get('dashboard_password');
-  if (stored) return { password: stored, generated: true };
-  const fresh = crypto.randomBytes(9).toString('base64url');
-  meta.set('dashboard_password', fresh);
-  return { password: fresh, generated: true };
+  return { password: '', generated: false };
 }
 
 function printBanner({ password, generated, url }) {
@@ -48,6 +45,7 @@ function printBanner({ password, generated, url }) {
   if (withWeb) {
     banner.info(`Panel web      ⁙ ${url}`);
     if (generated) banner.warn(`Contraseña del panel (generada y guardada en la BD): ${password}`);
+    if (!password) banner.info(`Panel web      ⁙ Abierto (sin contraseña)`);
   }
   if (env.ownerNumbers.length) banner.info(`Owner          ⁙ ${env.ownerNumbers.join(', ')}`);
   else banner.warn('OWNER_NUMBERS está vacío: nadie tendrá rango de owner. Edita tu .env');
