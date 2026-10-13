@@ -1,10 +1,11 @@
 /**
  * 𓆩 ☕ 𓆪  VÉRSOVA · API REST del panel web
  * ────────────────────────────────────────────────────────────────
- * Todo responde JSON `{ ok, ... }`. Los endpoints públicos no
- * requieren autenticación. Los endpoints protegidos usan auth
- * solo si DASHBOARD_PASSWORD está configurada.
+ * Todo responde JSON `{ ok, ... }`. El panel está abierto: no se pide
+ * contraseña para usar la API (decisión de producto).
  */
+import os from 'node:os';
+import fs from 'node:fs';
 import express from 'express';
 import QRCode from 'qrcode';
 import {
@@ -15,6 +16,9 @@ import {
   requestsRepo,
   warningsRepo,
   auditRepo,
+  ticketsRepo,
+  statsRepo,
+  normalizePrefix,
 } from '../src/db/index.js';
 import { IDENTITY } from '../src/config/identity.js';
 import { env } from '../src/config/env.js';
@@ -30,8 +34,17 @@ import { createCreditsRouter } from './api/credits.js';
 export const formatPairingCode = (code) =>
   code ? `${String(code).slice(0, 4)}-${String(code).slice(4, 8)}` : null;
 
+/** Recuento real de filas por tabla (nada de datos inventados). */
+const dbCounts = () => statsRepo.tableCounts();
+
 export function createRouter({ manager, auth }) {
   const router = express.Router();
+
+  // contador real de peticiones al panel (se muestra en Métricas)
+  router.use((_req, _res, next) => {
+    statsRepo.bump('apiRequests');
+    next();
+  });
 
   /* ── públicas (sin auth) ─────────────────────────────────── */
 
@@ -45,23 +58,9 @@ export function createRouter({ manager, auth }) {
     });
   });
 
-  // Login solo si hay contraseña configurada
-  router.post('/login', (req, res) => {
-    if (!auth.hasPassword) {
-      return res.json({ ok: true, token: 'open', expiresAt: Date.now() + 86_400_000, noPassword: true });
-    }
-    const ip = req.ip ?? 'unknown';
-    if (auth.isLocked(ip)) {
-      return res.status(429).json({ ok: false, error: 'Demasiados intentos fallidos. Espera 5 minutos.' });
-    }
-    const { password } = req.body ?? {};
-    if (!auth.verifyPassword(password)) {
-      auth.registerFailure(ip);
-      return res.status(401).json({ ok: false, error: 'Contraseña incorrecta.' });
-    }
-    auth.clearFailures(ip);
-    const { token, expiresAt } = auth.issueToken();
-    return res.json({ ok: true, token, expiresAt });
+  // El panel no pide contraseña (decisión de producto): siempre abierto.
+  router.post('/login', (_req, res) => {
+    return res.json({ ok: true, token: 'open', expiresAt: Date.now() + 86_400_000, noPassword: true });
   });
 
   // Montar sub-routers de API y créditos (públicos)
@@ -83,7 +82,10 @@ export function createRouter({ manager, auth }) {
       bot: { name: IDENTITY.name, team: IDENTITY.team, version: IDENTITY.version, prefix: IDENTITY.prefix },
       limits: { maxInstances: manager.maxInstances },
       owner: env.ownerNumbers.map((n) => maskPhone(n)),
-      authRequired: auth.hasPassword,
+      authRequired: false,
+      prefixes: ['#', '-', '+', '.', '/'],
+      qrExpiresInSec: Math.round(env.qrTimeoutMs / 1000),
+      database: { path: env.dbPath, tables: dbCounts() },
     });
   });
 
@@ -113,6 +115,71 @@ export function createRouter({ manager, auth }) {
       rolesFree: roleStats.free,
       pendingRequests: groups.reduce((total, g) => total + requestsRepo.counts(g.group_id).pending, 0),
       auditEvents: auditRepo.count(),
+      // datos reales, sin inventar: contadores y base de datos
+      commandsExecuted: statsRepo.totalCommands(),
+      messagesHandled: statsRepo.get('messages'),
+      apiRequests: statsRepo.get('apiRequests'),
+      dbPath: env.dbPath,
+      dbTables: dbCounts(),
+    });
+  });
+
+  /* ── sistema real (servidor, base de datos, conexiones) ────── */
+
+  router.get('/system', (_req, res) => {
+    const cpus = os.cpus();
+    let cpuUsed = 0;
+    let cpuTotal = 0;
+    for (const cpu of cpus) {
+      const times = cpu.times;
+      cpuUsed += times.user + times.nice + times.sys + times.irq;
+      cpuTotal += times.user + times.nice + times.sys + times.irq + times.idle;
+    }
+    const totalMem = os.totalmem();
+    const freeMem = os.freemem();
+    let dbSize = null;
+    try {
+      dbSize = fs.statSync(env.dbPath).size;
+    } catch {
+      dbSize = null;
+    }
+    const instances = manager.list();
+    res.json({
+      ok: true,
+      server: {
+        hostname: os.hostname(),
+        platform: `${os.type()} ${os.release()}`,
+        arch: os.arch(),
+        node: process.version,
+        uptimeMs: Math.round(process.uptime() * 1000),
+        cpu: {
+          model: cpus[0]?.model?.trim() ?? 'desconocido',
+          cores: cpus.length,
+          usagePercent: cpuTotal > 0 ? Math.round((cpuUsed / cpuTotal) * 10000) / 100 : 0,
+          loadAvg: Math.round(os.loadavg()[0] * 100) / 100,
+        },
+        memory: {
+          totalBytes: totalMem,
+          freeBytes: freeMem,
+          usedBytes: totalMem - freeMem,
+          usagePercent: Math.round(((totalMem - freeMem) / totalMem) * 10000) / 100,
+        },
+      },
+      database: {
+        path: env.dbPath,
+        sizeBytes: dbSize,
+        tables: dbCounts(),
+        commandsExecuted: statsRepo.totalCommands(),
+        topCommands: statsRepo.topCommands(8),
+        counters: statsRepo.all(),
+      },
+      whatsapp: {
+        instances: instances.length,
+        connected: instances.filter((i) => i.status === 'open').length,
+        activated: instances.filter((i) => i.activated).length,
+        groups: groupsRepo.all().length,
+        statuses: instances.map((i) => ({ id: i.id, name: i.name, status: i.status, activated: Boolean(i.activated) })),
+      },
     });
   });
 
@@ -124,6 +191,9 @@ export function createRouter({ manager, auth }) {
     phone: row.phone,
     phoneMasked: maskPhone(row.phone),
     pairingMode: row.pairing_mode,
+    prefix: row.prefix ?? '.',
+    activated: Boolean(row.activated),
+    activatedAt: row.activated_at ?? null,
     status: row.status,
     waJid: row.wa_jid,
     pushName: row.push_name,
@@ -148,8 +218,8 @@ export function createRouter({ manager, auth }) {
   });
 
   router.post('/instances', (req, res) => {
-    const { name, phone, pairingMode } = req.body ?? {};
-    const result = manager.createInstance({ name, phone, pairingMode });
+    const { name, phone, pairingMode, prefix } = req.body ?? {};
+    const result = manager.createInstance({ name, phone, pairingMode, prefix });
     if (!result.ok) return res.status(400).json({ ok: false, error: result.error });
     return res.status(201).json({ ok: true, instance: publicInstance(result.instance) });
   });
@@ -157,10 +227,26 @@ export function createRouter({ manager, auth }) {
   router.patch('/instances/:id', (req, res) => {
     const instance = instancesRepo.byId(req.params.id);
     if (!instance) return res.status(404).json({ ok: false, error: 'Sub-bot no encontrado.' });
-    const { name, autostart } = req.body ?? {};
+    const { name, autostart, prefix } = req.body ?? {};
     if (typeof name === 'string' && name.trim()) instancesRepo.rename(req.params.id, name.trim());
     if (typeof autostart === 'boolean') instancesRepo.setAutostart(req.params.id, autostart);
+    if (prefix !== undefined) {
+      const check = normalizePrefix(prefix, instance.prefix);
+      if (!check.ok) return res.status(400).json({ ok: false, error: check.reason });
+      instancesRepo.setPrefix(req.params.id, check.value);
+    }
     return res.json({ ok: true, instance: publicInstance(instancesRepo.byId(req.params.id)) });
+  });
+
+  /** Activa el sub-bot con la clave entregada por `.key` en WhatsApp. */
+  router.post('/instances/:id/activate', (req, res) => {
+    const { key } = req.body ?? {};
+    if (!key || !String(key).trim()) {
+      return res.status(400).json({ ok: false, error: 'Escribe la clave que te dio el bot con el comando .key.' });
+    }
+    const result = manager.activate(req.params.id, key);
+    if (!result.ok) return res.status(400).json({ ok: false, error: result.error });
+    return res.json({ ok: true, instance: publicInstance(result.instance), already: Boolean(result.already) });
   });
 
   router.post('/instances/:id/start', async (req, res) => {
@@ -213,15 +299,44 @@ export function createRouter({ manager, auth }) {
       id: instance.id,
       name: instance.name,
       pairingMode: instance.pairing_mode,
+      prefix: instance.prefix ?? '.',
+      activated: Boolean(instance.activated),
+      activatedAt: instance.activated_at ?? null,
       status: snapshot.status ?? instance.status,
       qr: snapshot.qr ?? null,
       qrDataUrl,
+      qrExpiresInSec: Math.round(env.qrTimeoutMs / 1000),
       pairingCode: snapshot.pairingCode ?? null,
       pairingFormatted: formatPairingCode(snapshot.pairingCode),
       lastError: snapshot.lastError ?? instance.last_error ?? null,
       jid: snapshot.jid ?? instance.wa_jid ?? null,
       pushName: snapshot.pushName ?? instance.push_name ?? null,
     });
+  });
+
+  /* ── tickets del panel (persistidos en la base de datos) ───── */
+
+  router.get('/tickets', (_req, res) => {
+    res.json({ ok: true, tickets: ticketsRepo.all(), counts: ticketsRepo.counts() });
+  });
+
+  router.post('/tickets', (req, res) => {
+    const { title, message } = req.body ?? {};
+    const cleanTitle = String(title ?? '').trim();
+    const cleanMessage = String(message ?? '').trim();
+    if (!cleanTitle || !cleanMessage) {
+      return res.status(400).json({ ok: false, error: 'El asunto y el mensaje son obligatorios.' });
+    }
+    const ticket = ticketsRepo.create({ title: cleanTitle, message: cleanMessage });
+    auditRepo.log({ instanceId: null, action: 'web.ticket.created', detail: { id: ticket.id } });
+    return res.status(201).json({ ok: true, ticket });
+  });
+
+  router.post('/tickets/:id/status', (req, res) => {
+    const { status } = req.body ?? {};
+    const changed = ticketsRepo.setStatus(req.params.id, status);
+    if (!changed) return res.status(404).json({ ok: false, error: 'Ticket no encontrado o estado inválido.' });
+    return res.json({ ok: true, ticket: ticketsRepo.byId(req.params.id) });
   });
 
   /* ── grupos ─────────────────────────────────────────────── */

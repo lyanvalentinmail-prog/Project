@@ -32,7 +32,7 @@ import { baileysLogger, scoped } from './logger.js';
 import { createContext } from './context.js';
 import { handleCommandMessage } from './router.js';
 import * as events from './events.js';
-import { instancesRepo } from '../db/index.js';
+import { instancesRepo, statsRepo } from '../db/index.js';
 import { normalizeJid, isGroupJid } from '../utils/ids.js';
 import { backoff, sleep } from '../utils/misc.js';
 
@@ -323,6 +323,8 @@ export class BotClient extends EventEmitter {
     if (raw.key?.fromMe) return;
     if (raw.key?.remoteJid === 'status@broadcast') return;
     if (type === 'append') return; // mensajes de histórico, no se procesan
+
+    statsRepo.bump('messages');
 
     const ctx = await createContext({ raw, instance: this.instance, client: this });
 

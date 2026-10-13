@@ -12,9 +12,11 @@ import { teamCommands } from './team.js';
 import { socialCommands } from './social.js';
 import { adminCommands } from './admin.js';
 import { infoCommands, setRegistry } from './info.js';
+import { activationCommands } from './activation.js';
 
 const MODULES = [
   ['info', infoCommands],
+  ['activation', activationCommands],
   ['registro', registroCommands],
   ['roles', rolesCommands],
   ['team', teamCommands],

@@ -93,6 +93,8 @@ export const VIEWS = {
   'sys.ping': T.ping,
   'sys.owner': T.ownerCard,
   'sys.botInfo': T.botInfo,
+  'sys.key': T.activationKey,
+  'sys.inactive': T.botInactive,
 
   // menú
   'menu.main': mainMenu,

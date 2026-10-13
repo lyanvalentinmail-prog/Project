@@ -114,6 +114,9 @@ export async function createSimulation({ dbPath = ':memory:', groupJid = DEMO_GR
       phone: botPhone,
       pairingMode: 'qr',
       sessionDir: '/tmp/versova-simulator-session',
+      prefix: '.',
+      activated: true,
+      autostart: true,
     });
 
   const client = new FakeClient({ jid: phoneToJid(botPhone), pushName: IDENTITY.name });

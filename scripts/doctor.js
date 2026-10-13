@@ -126,8 +126,8 @@ async function main() {
       : (process.env.RENDER ? 'variables de entorno de Render detectadas' : 'usando variables de entorno del sistema')
   );
   check('OWNER_NUMBERS configurado', env.ownerNumbers.length > 0, env.ownerNumbers.length ? `${env.ownerNumbers.length} número(s) owner` : 'sin owner: nadie tendrá rango máximo');
-  check('prefijo', Boolean(IDENTITY.prefix), `"${IDENTITY.prefix}"`);
-  check('contraseña del panel', true, env.dashboardPassword ? 'definida en .env' : 'se generará y guardará en la base de datos');
+  check('prefijo', Boolean(IDENTITY.prefix), `por defecto "${IDENTITY.prefix}" (cada bot elige: # - + . /)`);
+  check('acceso del panel', true, 'abierto (sin contraseña) · bots se activan con la clave de .key');
   check('puerto del panel', env.webPort > 0, `${env.webHost}:${env.webPort}`);
   check('máximo de sub-bots', env.maxInstances >= 1 && env.maxInstances <= 3, String(env.maxInstances));
 

@@ -75,6 +75,20 @@ export const KAOMOJI = Object.freeze({
 
 /* ── constructores reutilizables ─────────────────────────────── */
 
+/**
+ * Prefijo con el que se renderiza el mensaje actual. Cada sub-bot
+ * puede elegir su prefijo (# - + . /); el router lo fija antes de
+ * componer la respuesta para que los mensajes lo muestren real.
+ */
+let renderPrefix = IDENTITY.prefix;
+export function setRenderPrefix(prefix) {
+  renderPrefix = prefix ? String(prefix) : IDENTITY.prefix;
+  return renderPrefix;
+}
+export function currentPrefix() {
+  return renderPrefix;
+}
+
 /** Encabezado oficial del bot (el que definiste para VÉRSOVA). */
 export function versovaHeader({ subtitle = '( ᵕ ᴗ ᵕ )♡', symbol = SYM.purify } = {}) {
   return [
@@ -101,11 +115,11 @@ export const kv = (label, value) => `ㅤ${SYM.leaf}ㅤ${label}ㅤ${SYM.dot}ㅤ${
 /** Fila de una lista numerada o con viñeta. */
 export const bullet = (text, icon = SYM.leaf) => `ㅤ${icon}ㅤ${text}`;
 
-/** Comando decorado: `୨ৎ .reg <nombre.edad>` */
-export const cmd = (name, args = '') => `ㅤ${SYM.clover}ㅤ${IDENTITY.prefix}${name}${args ? ` ${args}` : ''}`;
+/** Comando decorado: `୨ৎ .reg <nombre.edad>` (con el prefijo real del bot) */
+export const cmd = (name, args = '') => `ㅤ${SYM.clover}ㅤ${renderPrefix}${name}${args ? ` ${args}` : ''}`;
 
 /** Comando sin sangrado (para líneas sueltas dentro de un bloque). */
-export const inlineCmd = (name, args = '') => `${SYM.clover} ${IDENTITY.prefix}${name}${args ? ` ${args}` : ''}`;
+export const inlineCmd = (name, args = '') => `${SYM.clover} ${renderPrefix}${name}${args ? ` ${args}` : ''}`;
 
 /** Pie de página con la firma del team. */
 export function footer({ kaomoji = KAOMOJI.neutral, note = null } = {}) {

@@ -8,14 +8,13 @@
  * Maneja señales de apagado, errores no capturados y reconexión.
  */
 import process from 'node:process';
-import { initDatabase, closeDatabase, meta } from './db/index.js';
+import { initDatabase, closeDatabase } from './db/index.js';
 import { env } from './config/env.js';
 import { IDENTITY } from './config/identity.js';
 import { BotManager } from './core/bot-manager.js';
 import { startMaintenance, runMaintenance } from './core/maintenance.js';
 import { registry } from './commands/index.js';
 import { banner, scoped } from './core/logger.js';
-import crypto from 'node:crypto';
 
 const log = scoped('boot');
 
@@ -24,28 +23,20 @@ const hasFlag = (flag) => args.includes(flag);
 const withWeb = !hasFlag('--no-web');
 const withBot = !hasFlag('--web-only');
 
-/** Contraseña del panel: la del .env o una generada y persistida. */
-function resolveDashboardPassword() {
-  // Si no hay DASHBOARD_PASSWORD, el panel es abierto (sin login)
-  if (env.dashboardPassword) return { password: env.dashboardPassword, generated: false };
-  return { password: '', generated: false };
-}
-
-function printBanner({ password, generated, url }) {
+function printBanner({ url }) {
   banner.title(`
 ㅤㅤ࿚ׄ࿙ֹ࿚᮫᜔۬፟֟࿙ֹ࿚ׄ࿙
 ㅤㅤㅤ𓆩ㅤ禊ㅤ𓆪
 ㅤㅤ𝑽 𝑬́ 𝑹 𝑺 𝑶 𝑽 𝑨
 ㅤㅤ◢禍◣ Versova ࿙☕࿚
 `);
-  banner.ok(`Bot ${IDENTITY.name} v${IDENTITY.version} · prefijo "${IDENTITY.prefix}"`);
+  banner.ok(`Bot ${IDENTITY.name} v${IDENTITY.version} · prefijos # - + . / (por sub-bot)`);
   banner.info(`Base de datos  ⁙ ${env.dbPath}`);
   banner.info(`Sesiones       ⁙ ${env.sessionsDir}`);
   banner.info(`Comandos       ⁙ ${registry.count()} registrados`);
   if (withWeb) {
     banner.info(`Panel web      ⁙ ${url}`);
-    if (generated) banner.warn(`Contraseña del panel (generada y guardada en la BD): ${password}`);
-    if (!password) banner.info(`Panel web      ⁙ Abierto (sin contraseña)`);
+    banner.info(`Panel web      ⁙ Abierto (sin contraseña)`);
   }
   if (env.ownerNumbers.length) banner.info(`Owner          ⁙ ${env.ownerNumbers.join(', ')}`);
   else banner.warn('OWNER_NUMBERS está vacío: nadie tendrá rango de owner. Edita tu .env');
@@ -54,24 +45,23 @@ function printBanner({ password, generated, url }) {
 async function main() {
   initDatabase();
   const manager = new BotManager();
-  const { password, generated } = resolveDashboardPassword();
 
   let stopWeb = null;
   let url = null;
 
   if (withWeb) {
     const { createWebServer } = await import('../web/server.js');
-    const web = await createWebServer({ manager, password });
+    const web = await createWebServer({ manager });
     stopWeb = web.stop;
     url = web.url;
   }
 
-  printBanner({ password, generated, url });
+  printBanner({ url });
 
   if (withBot) {
     const results = await manager.startAll();
     if (!results.length) {
-      banner.warn('No hay sub-bots creados. Abre el panel web y crea el primero (QR o pairing code).');
+      banner.warn('No hay sub-bots activados. Abre el panel web, crea uno y actívalo con la clave de .key.');
     }
     for (const result of results) {
       if (result.ok) banner.ok(`Sub-bot "${result.client?.name ?? result.id}" iniciado → ${result.client?.status}`);

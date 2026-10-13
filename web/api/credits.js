@@ -166,18 +166,26 @@ export function createCreditsRouter() {
 
   // ── Comprar créditos (planes) ───────────────────────────────
   router.get('/plans', (_req, res) => {
-    const plans = getDb().prepare('SELECT * FROM plans WHERE active = 1 ORDER BY price ASC').all();
-    // Planes por defecto si no hay en la BD
+    const rows = getDb().prepare('SELECT * FROM plans WHERE active = 1 ORDER BY price ASC').all();
+    const plans = rows.map((row) => {
+      let features = [];
+      try {
+        features = JSON.parse(row.features ?? '[]');
+      } catch {
+        features = [];
+      }
+      return {
+        id: row.id,
+        name: row.name,
+        price: row.price,
+        credits: row.credits,
+        features,
+        popular: row.popular,
+      };
+    });
+    // Sin planes en la BD: la tienda queda vacía (nada de inventar)
     if (!plans.length) {
-      return res.json({
-        ok: true,
-        plans: [
-          { id: 'starter', name: 'Starter', price: 4.99, credits: 500, features: ['500 créditos', 'Acceso a endpoints Free y Híbridos', 'Soporte por email'], popular: 0 },
-          { id: 'pro', name: 'Pro', price: 9.99, credits: 1500, features: ['1,500 créditos', 'Acceso a todos los endpoints', 'Soporte prioritario', 'Sin marca de agua'], popular: 1 },
-          { id: 'business', name: 'Business', price: 24.99, credits: 5000, features: ['5,000 créditos', 'Acceso ilimitado', 'Soporte 24/7', 'Sin marca de agua', 'IP whitelist', 'Múltiples API keys'], popular: 0 },
-          { id: 'enterprise', name: 'Enterprise', price: 49.99, credits: 15000, features: ['15,000 créditos', 'Todo del plan Business', 'Endpoints exclusivos', 'SLA 99.9%', 'Manager dedicado'], popular: 0 },
-        ],
-      });
+      return res.json({ ok: true, plans: [] });
     }
     return res.json({ ok: true, plans });
   });

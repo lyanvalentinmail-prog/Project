@@ -79,7 +79,6 @@ export const env = Object.freeze({
   // web
   webHost: str(process.env.WEB_HOST, '0.0.0.0'),
   webPort: int(process.env.PORT || process.env.WEB_PORT, 3000, 1, 65535),
-  dashboardPassword: str(process.env.DASHBOARD_PASSWORD, ''),
   maxInstances: int(process.env.MAX_INSTANCES, 3, 1, 3),
 
   // rutas

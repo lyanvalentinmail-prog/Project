@@ -14,22 +14,37 @@ import { checkPermission } from '../security/permissions.js';
 import { applyResult } from './context.js';
 import { ok, fail } from '../services/result.js';
 import { splitArgs } from '../utils/text.js';
-import { auditRepo } from '../db/index.js';
+import { auditRepo, statsRepo, ALLOWED_PREFIXES } from '../db/index.js';
 import { scoped } from './logger.js';
 
 const log = scoped('router');
 
-/** Prefijos aceptados: el del grupo (config) y el global. */
+/** Comandos universales: se aceptan con CUALQUIERA de los prefijos (# - + . /). */
+const UNIVERSAL_COMMANDS = new Set(['key', 'clave']);
+
+/** Prefijos aceptados: el del sub-bot, el del grupo (config) y el global. */
 export function prefixesFor(ctx) {
+  const instancePrefix = ctx.instance?.prefix;
   const groupPrefix = ctx.group?.config?.prefix;
-  return [...new Set([IDENTITY.prefix, groupPrefix].filter(Boolean))];
+  const list = [instancePrefix, groupPrefix].filter(Boolean);
+  return [...new Set(list.length ? list : [IDENTITY.prefix])];
 }
 
 /** ¿El texto es un comando? Devuelve `{ prefix, name, args, argList }` o null. */
 export function parseCommand(text, ctx) {
   const raw = String(text ?? '').trim();
   if (!raw) return null;
-  const prefix = prefixesFor(ctx).find((p) => raw.startsWith(p));
+  let prefix = prefixesFor(ctx).find((p) => raw.startsWith(p));
+
+  // `.key` (y alias) funciona con cualquier prefijo permitido, incluso
+  // antes de que el bot esté activado: es el comando de activación.
+  if (!prefix) {
+    prefix = ALLOWED_PREFIXES.find((p) => {
+      if (!raw.startsWith(p)) return false;
+      const head = raw.slice(p.length).trim().split(/\s+/)[0]?.toLowerCase() ?? '';
+      return UNIVERSAL_COMMANDS.has(head);
+    });
+  }
   if (!prefix) return null;
 
   const withoutPrefix = raw.slice(prefix.length).trim();
@@ -119,6 +134,7 @@ export async function dispatch(ctx, parsed) {
   try {
     const result = await command.run(ctx);
     if (!result) return false;
+    statsRepo.bumpCommand(command.name);
     await applyResult(ctx, result);
     return true;
   } catch (error) {
@@ -145,6 +161,16 @@ export async function dispatch(ctx, parsed) {
 export async function handleCommandMessage(ctx) {
   const parsed = parseCommand(ctx.text, ctx);
   if (!parsed) return false;
+
+  // Bot SIN ACTIVAR: solo responde al comando de activación (`.key`).
+  // La clave se canjea en el panel web y entonces el bot queda operativo.
+  const isKeyCommand = UNIVERSAL_COMMANDS.has(parsed.name);
+  const activated = ctx.instance == null || ctx.instance.activated !== 0;
+  if (!activated && !isKeyCommand) {
+    await applyResult(ctx, fail('sys.inactive', { instanceName: ctx.instance?.name ?? null }));
+    return true;
+  }
+
   return dispatch(ctx, parsed);
 }
 
