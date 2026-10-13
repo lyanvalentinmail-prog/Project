@@ -41,8 +41,12 @@ Funcionan en cualquier cliente y no dependen de funciones que WhatsApp pueda ret
 ## 3. El bot solo ve lo que ocurre mientras está vinculado
 
 - No hay histórico anterior a la vinculación (VÉRSOVA no sincroniza el pasado: `syncFullHistory=false` a propósito, para no saturar).
-- Si el proceso se cae, los mensajes de esos segundos no llegan. Al reconectar se
-  resincronizan grupos, administradores y tamaños desde `groupFetchAllParticipating()`.
+- Al reconectar, WhatsApp puede entregar mensajes pendientes como `append`. Se
+  procesan solo los de los últimos **2 minutos**; los antiguos o sin fecha válida se
+  ignoran para no ejecutar órdenes viejas. La entrega depende de WhatsApp.
+- Se deduplican los eventos repetidos durante 10 minutos (hasta 2000 IDs por bot,
+  en memoria) y se resincronizan grupos, administradores y tamaños desde
+  `groupFetchAllParticipating()`.
 - La base de datos conserva todo lo anterior: **nada se pierde al reiniciar**.
 
 ---
