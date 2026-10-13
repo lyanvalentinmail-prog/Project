@@ -27,7 +27,14 @@ const MIGRATIONS = [
       database.exec(schema);
     },
   },
-  // { version: 2, name: 'ejemplo de migración futura', up(db) { db.exec('ALTER TABLE ...'); } },
+  {
+    version: 2,
+    name: 'sistema de créditos',
+    up(database) {
+      const schema = fs.readFileSync(path.join(here, 'schema-credits.sql'), 'utf8');
+      database.exec(schema);
+    },
+  },
 ];
 
 /** Devuelve la conexión activa (la crea si aún no existe). */

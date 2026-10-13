@@ -3,161 +3,447 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>VÉRSOVA · Panel de bots</title>
-    <meta name="description" content="◢禍◣ Versova ࿙☕࿚ — gestión de sub-bots de WhatsApp, grupos y personajes." />
+    <title>StellarWA · Potencia tu proyecto con una sola clave</title>
+    <meta name="description" content="Más de 78 endpoints listos para producción: descargas, IA, generadores y utilidades. Todo con una sola clave." />
     <link rel="stylesheet" href="/styles.css" />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%98%95%3C/text%3E%3C/svg%3E"
-    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9C%A8%3C/text%3E%3C/svg%3E" />
   </head>
   <body>
-    <div class="bg-grid" aria-hidden="true"></div>
+    <!-- ══ NAVBAR ══════════════════════════════════════════════ -->
+    <nav class="navbar" id="navbar">
+      <div class="nav-container">
+        <a href="/" class="nav-brand">
+          <span class="nav-icon">✦</span>
+          <span class="nav-logo">StellarWA</span>
+        </a>
+        <div class="nav-links" id="nav-links">
+          <a href="#features" class="nav-link">Inicio</a>
+          <a href="#endpoints" class="nav-link">Endpoints</a>
+          <a href="#pricing" class="nav-link">Precios</a>
+          <a href="#health" class="nav-link">Estado</a>
+          <a href="#faq" class="nav-link">FAQ</a>
+          <a href="/dash" class="nav-link">Dashboard</a>
+        </div>
+        <div class="nav-actions">
+          <span class="service-badge" id="service-status">
+            <span class="badge-dot"></span>
+            Servicio 100% operativo
+          </span>
+          <a href="#auth" class="btn btn-ghost" id="btn-login">Iniciar sesión</a>
+          <a href="#auth" class="btn btn-primary" id="btn-register">Registrarse</a>
+          <button class="nav-toggle" id="nav-toggle" aria-label="Menú">
+            <span></span><span></span><span></span>
+          </button>
+        </div>
+      </div>
+    </nav>
 
-    <!-- ══ LOGIN ══════════════════════════════════════════════ -->
-    <section id="login" class="login hidden">
-      <div class="login-card">
-        <div class="crown">࿚ׄ࿙ֹ࿚᮫᜔۬፟֟࿙ֹ࿚ׄ࿙</div>
-        <div class="brackets">𓆩 禊 𓆪</div>
-        <h1 class="logo">𝑽 𝑬́ 𝑹 𝑺 𝑶 𝑽 𝑨</h1>
-        <p class="tagline">◢禍◣ Versova ࿙☕࿚ · Bot system</p>
-        <form id="login-form" autocomplete="off">
-          <label for="password">Contraseña del panel</label>
-          <input id="password" type="password" placeholder="••••••••" required />
-          <button type="submit" class="btn btn-primary">Entrar ୨ৎ</button>
-          <p id="login-error" class="error-text" role="alert"></p>
-        </form>
-        <p class="hint">La contraseña sale en la consola al arrancar el bot<br />o la defines en <code>DASHBOARD_PASSWORD</code>.</p>
+    <!-- ══ HERO ════════════════════════════════════════════════ -->
+    <section class="hero" id="hero">
+      <div class="hero-bg">
+        <div class="hero-glow hero-glow-1"></div>
+        <div class="hero-glow hero-glow-2"></div>
+        <div class="hero-grid"></div>
+      </div>
+      <div class="hero-container">
+        <div class="hero-content">
+          <span class="hero-badge">Servicio 100% operativo · v1.0</span>
+          <h1 class="hero-title">Tu proyecto merece<br /><span class="gradient-text">una infraestructura seria</span></h1>
+          <p class="hero-subtitle">Más de <strong>78 endpoints</strong> listos para producción: descargas sin marca de agua, inteligencia artificial, motores de búsqueda, generadores y utilidades. Todo con una sola clave y latencia mínima.</p>
+          <div class="hero-actions">
+            <a href="#auth" class="btn btn-primary btn-lg">Obtener una Cuenta</a>
+            <a href="#endpoints" class="btn btn-outline btn-lg">Explorar 78+ endpoints</a>
+          </div>
+        </div>
+        <div class="hero-stats" id="hero-stats">
+          <div class="stat-card">
+            <div class="stat-value" id="stat-requests">0</div>
+            <div class="stat-label">Requests servidas</div>
+            <div class="stat-note">En tiempo real</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-today">0</div>
+            <div class="stat-label">Requests hoy</div>
+            <div class="stat-note">Actividad diaria</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-users">0</div>
+            <div class="stat-label">Usuarios registrados</div>
+            <div class="stat-note">Comunidad activa</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-endpoints">78</div>
+            <div class="stat-label">Endpoints activos</div>
+            <div class="stat-note">99.9% uptime</div>
+          </div>
+        </div>
       </div>
     </section>
 
-    <!-- ══ APP ════════════════════════════════════════════════ -->
-    <div id="app" class="app hidden">
-      <header class="topbar">
-        <div class="brand">
-          <span class="brand-mark">𓆩 ☕ 𓆪</span>
-          <div>
-            <strong>𝑽 𝑬́ 𝑹 𝑺 𝑶 𝑽 𝑨</strong>
-            <small id="brand-sub">◢禍◣ Versova ࿙☕࿚</small>
+    <!-- ══ COUPON REDEEM ═══════════════════════════════════════ -->
+    <section class="coupon-section" id="coupon">
+      <div class="container">
+        <div class="coupon-card">
+          <div class="coupon-content">
+            <h2>¿Tienes un Código de Regalo?</h2>
+            <p>Canjea cupones para obtener créditos y acceder a endpoints premium.</p>
+            <form id="coupon-form" class="coupon-form">
+              <input type="text" id="coupon-code" placeholder="Introduce tu código" class="coupon-input" />
+              <button type="submit" class="btn btn-primary">Canjear</button>
+            </form>
+            <p class="coupon-note">Introduce tu código y presiona el botón para canjearlo.</p>
+            <p id="coupon-msg" class="coupon-msg"></p>
           </div>
         </div>
-        <nav class="tabs" role="tablist">
-          <button class="tab active" data-tab="bots" role="tab">☕ Sub-bots</button>
-          <button class="tab" data-tab="groups" role="tab">🥢 Grupos</button>
-          <button class="tab" data-tab="activity" role="tab">⛓️ Actividad</button>
-          <button class="tab" data-tab="help" role="tab">𓂃 Comandos</button>
-        </nav>
-        <div class="topbar-right">
-          <span id="connection" class="pill pill-muted">SSE · conectando</span>
-          <button id="logout" class="btn btn-ghost" title="Cerrar sesión">Salir</button>
+      </div>
+    </section>
+
+    <!-- ══ FEATURES ════════════════════════════════════════════ -->
+    <section class="features" id="features">
+      <div class="container">
+        <div class="section-header">
+          <h2 class="section-title">Diseñado para escalar contigo</h2>
+          <p class="section-subtitle">Infraestructura robusta pensada para WhatsApp, Telegram, Discord, aplicaciones web y scripts en cualquier lenguaje.</p>
         </div>
-      </header>
-
-      <main>
-        <!-- ── STATS ─────────────────────────────────────────── -->
-        <section class="stats" id="stats"></section>
-
-        <!-- ── BOTS ──────────────────────────────────────────── -->
-        <section class="panel" data-panel="bots">
-          <div class="panel-head">
-            <h2>𓆩 ☕ 𓆪 Tus sub-bots</h2>
-            <p class="muted">Hasta <strong id="max-instances">3</strong> números distintos en el mismo proceso. Cada uno con su sesión y sus grupos.</p>
+        <div class="features-grid">
+          <div class="feature-card">
+            <div class="feature-icon">🔒</div>
+            <h3>Seguridad por clave & IP</h3>
+            <p>Restringe el uso de tu API key a direcciones IP específicas y protege tu cuota contra accesos no autorizados.</p>
           </div>
+          <div class="feature-card">
+            <div class="feature-icon">🧪</div>
+            <h3>Playground interactivo</h3>
+            <p>Prueba cada endpoint desde la documentación en vivo y obtén snippets de código listos para pegar en tu proyecto.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">⚡</div>
+            <h3>Latencia mínima</h3>
+            <p>Servidores optimizados con respuesta promedio menor a 300ms para mantener tu aplicación siempre ágil.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">💬</div>
+            <h3>Soporte real</h3>
+            <p>Equipo disponible para ayudarte a integrar, escalar y resolver dudas directamente por WhatsApp o email.</p>
+          </div>
+        </div>
+      </div>
+    </section>
 
-          <div id="instances" class="cards"></div>
-
-          <div class="card card-form" id="create-card">
-            <h3>୨ৎ Crear un sub-bot nuevo</h3>
-            <form id="create-form" autocomplete="off">
-              <div class="field">
-                <label for="inst-name">Nombre</label>
-                <input id="inst-name" maxlength="40" placeholder="Versova ☕" />
-              </div>
-              <div class="field">
-                <label for="inst-phone">Número (formato internacional, sin +)</label>
-                <input id="inst-phone" inputmode="numeric" placeholder="5215512345678" required />
-                <small class="muted">Ej. 52 México · 34 España · 54 Argentina · 57 Colombia</small>
-              </div>
-              <div class="field">
-                <span class="label">Método de vinculación</span>
-                <div class="radio-row">
-                  <label class="radio">
-                    <input type="radio" name="mode" value="qr" checked />
-                    <span>
-                      <strong>Código QR</strong>
-                      <small>WhatsApp → Dispositivos vinculados → escanear</small>
-                    </span>
-                  </label>
-                  <label class="radio">
-                    <input type="radio" name="mode" value="pairing" />
-                    <span>
-                      <strong>Pairing code</strong>
-                      <small>Vincular con código de 8 caracteres</small>
-                    </span>
-                  </label>
+    <!-- ══ SYSTEM HEALTH ═══════════════════════════════════════ -->
+    <section class="health-section" id="health">
+      <div class="container">
+        <div class="section-header">
+          <h2 class="section-title">Salud del sistema</h2>
+          <p class="section-subtitle">Estado en vivo de los servicios monitoreados.</p>
+        </div>
+        <div class="health-grid">
+          <div class="health-card">
+            <div class="health-header">
+              <h3>Salud de servicios</h3>
+              <span class="health-status health-ok" id="health-all">
+                <span class="badge-dot"></span> Todos operativos
+              </span>
+            </div>
+            <div class="health-items">
+              <div class="health-item">
+                <div class="health-item-info">
+                  <span class="health-item-icon">🖥️</span>
+                  <div>
+                    <strong>API Server</strong>
+                    <small>stellarwa.xyz</small>
+                  </div>
+                </div>
+                <div class="health-item-status">
+                  <span class="latency">&lt; 100ms</span>
+                  <span class="health-status health-ok"><span class="badge-dot"></span> Operativo</span>
                 </div>
               </div>
-              <button type="submit" class="btn btn-primary">Crear sub-bot</button>
-              <p class="error-text" id="create-error" role="alert"></p>
-            </form>
-          </div>
-        </section>
-
-        <!-- ── GROUPS ────────────────────────────────────────── -->
-        <section class="panel hidden" data-panel="groups">
-          <div class="panel-head">
-            <h2>𓆩 🥢 𓆪 Grupos del team</h2>
-            <p class="muted">Datos separados por grupo. Aquí puedes aprobar personajes sin tocar WhatsApp.</p>
-          </div>
-          <div id="groups" class="cards"></div>
-          <div id="group-detail" class="card hidden"></div>
-        </section>
-
-        <!-- ── ACTIVITY ──────────────────────────────────────── -->
-        <section class="panel hidden" data-panel="activity">
-          <div class="panel-head">
-            <h2>𓆩 ⛓️ 𓆪 Actividad en vivo</h2>
-            <p class="muted">Log de los sub-bots y auditoría administrativa.</p>
-          </div>
-          <div class="split">
-            <div class="card">
-              <h3>Consola</h3>
-              <div id="live-log" class="log"></div>
+              <div class="health-item">
+                <div class="health-item-info">
+                  <span class="health-item-icon">💻</span>
+                  <div>
+                    <strong>CPU</strong>
+                    <small id="cpu-usage">5.0% en uso</small>
+                  </div>
+                </div>
+                <div class="health-item-bar">
+                  <div class="bar"><div class="bar-fill bar-ok" id="cpu-bar" style="width:5%"></div></div>
+                </div>
+                <div class="health-item-status">
+                  <span class="health-status health-ok"><span class="badge-dot"></span> Operativo</span>
+                </div>
+              </div>
+              <div class="health-item">
+                <div class="health-item-info">
+                  <span class="health-item-icon">📊</span>
+                  <div>
+                    <strong>Memoria RAM</strong>
+                    <small id="ram-usage">58.0% utilizada</small>
+                  </div>
+                </div>
+                <div class="health-item-bar">
+                  <div class="bar"><div class="bar-fill bar-ok" id="ram-bar" style="width:58%"></div></div>
+                </div>
+                <div class="health-item-status">
+                  <span class="health-status health-ok"><span class="badge-dot"></span> Operativo</span>
+                </div>
+              </div>
+              <div class="health-item">
+                <div class="health-item-info">
+                  <span class="health-item-icon">💾</span>
+                  <div>
+                    <strong>Almacenamiento</strong>
+                    <small id="disk-usage">22% en uso</small>
+                  </div>
+                </div>
+                <div class="health-item-bar">
+                  <div class="bar"><div class="bar-fill bar-ok" id="disk-bar" style="width:22%"></div></div>
+                </div>
+                <div class="health-item-status">
+                  <span class="health-status health-ok"><span class="badge-dot"></span> Operativo</span>
+                </div>
+              </div>
             </div>
-            <div class="card">
-              <h3>Auditoría</h3>
-              <div id="audit" class="log"></div>
-            </div>
           </div>
-        </section>
-
-        <!-- ── HELP ──────────────────────────────────────────── -->
-        <section class="panel hidden" data-panel="help">
-          <div class="panel-head">
-            <h2>𓆩 𓂃 𓆪 Comandos disponibles</h2>
-            <p class="muted">Prefijo activo: <code id="prefix">.</code> — la misma lista que ve el bot en <code>.menu</code>.</p>
-          </div>
-          <div id="commands" class="commands"></div>
-        </section>
-      </main>
-
-      <footer class="footer">
-        <span>⌞ ≪⁹⁹ ⁙ 𝐕𝐄́𝐑𝐒𝐎𝐕𝐀 · est. 2026</span>
-        <span class="muted">𝖸𝗈𝗎𝗋 𝗋𝗈𝗅𝖾 𝗂𝗌 𝗒𝗈𝗎𝗋 𝗂𝖽𝖾𝗇𝗍𝗂𝗍𝗒.</span>
-      </footer>
-    </div>
-
-    <!-- ══ MODAL DE VINCULACIÓN ═══════════════════════════════ -->
-    <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
-      <div class="modal-card">
-        <button class="modal-close" id="modal-close" aria-label="Cerrar">✕</button>
-        <div class="crown">࿚ׄ࿙ֹ࿚᮫᜔۬፟֟࿙ֹ࿚ׄ࿙</div>
-        <h2 id="modal-title">Vincular número</h2>
-        <p id="modal-subtitle" class="muted"></p>
-        <div id="modal-body" class="modal-body"></div>
-        <div id="modal-actions" class="modal-actions"></div>
+        </div>
       </div>
-    </div>
+    </section>
+
+    <!-- ══ TEAM ════════════════════════════════════════════════ -->
+    <section class="team-section" id="team">
+      <div class="container">
+        <div class="section-header">
+          <h2 class="section-title">Nuestro equipo</h2>
+          <p class="section-subtitle">Las personas que hacen posible StellarWA.</p>
+        </div>
+        <div class="team-subtitle">Colaboradores <span class="badge badge-green">Activos</span></div>
+        <div class="team-grid" id="team-grid">
+          <!-- Se llena dinámicamente -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ ENDPOINTS ═══════════════════════════════════════════ -->
+    <section class="endpoints-section" id="endpoints">
+      <div class="container">
+        <div class="section-header">
+          <h2 class="section-title">Explora los endpoints</h2>
+          <p class="section-subtitle">Toca cualquier categoría para descubrir todos los endpoints disponibles.</p>
+        </div>
+        <div class="endpoints-hint">Toca una categoría para desplegar la lista de endpoints</div>
+        <div class="endpoints-list" id="endpoints-list">
+          <!-- Se llena dinámicamente -->
+        </div>
+        <div class="endpoints-cta">
+          <a href="/dash" class="btn btn-outline">Ver documentación completa</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ CTA ═════════════════════════════════════════════════ -->
+    <section class="cta-section">
+      <div class="container">
+        <div class="cta-card">
+          <h2>Comienza a construir en menos de un minuto</h2>
+          <p>Regístrate gratis, copia tu clave de acceso y ejecuta tus pruebas hoy mismo. Sin requerir tarjeta de crédito.</p>
+          <div class="cta-actions">
+            <a href="#auth" class="btn btn-primary btn-lg">Crear cuenta gratis</a>
+            <a href="#hero" class="btn btn-ghost">Volver al inicio</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ FAQ ═════════════════════════════════════════════════ -->
+    <section class="faq-section" id="faq">
+      <div class="container">
+        <div class="section-header">
+          <h2 class="section-title">Preguntas frecuentes</h2>
+          <p class="section-subtitle">Todo lo que necesitas saber sobre StellarWA, tu API key y el uso de los endpoints.</p>
+        </div>
+        <div class="faq-list" id="faq-list">
+          <!-- Se llena dinámicamente -->
+        </div>
+        <div class="faq-footer">
+          <p>¿No encontraste lo que buscabas?</p>
+          <a href="#" class="btn btn-outline">Abrir un ticket de soporte</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ AUTH (LOGIN / REGISTER) ═════════════════════════════ -->
+    <section class="auth-section hidden" id="auth">
+      <div class="auth-container">
+        <div class="auth-card">
+          <button class="auth-close" id="auth-close" aria-label="Cerrar">✕</button>
+          <div class="auth-brand">
+            <span class="nav-icon">✦</span>
+            <span class="nav-logo">StellarWA</span>
+          </div>
+
+          <!-- Login -->
+          <div id="auth-login">
+            <h2>Iniciar sesión</h2>
+            <p class="auth-subtitle">Accede a tu panel de control</p>
+            <form id="login-form">
+              <div class="field">
+                <label for="login-email">Email</label>
+                <input type="email" id="login-email" placeholder="tu@email.com" required />
+              </div>
+              <div class="field">
+                <label for="login-password">Contraseña</label>
+                <input type="password" id="login-password" placeholder="••••••••" required />
+              </div>
+              <button type="submit" class="btn btn-primary btn-full">Iniciar sesión</button>
+              <p id="login-error" class="error-text"></p>
+            </form>
+            <p class="auth-switch">¿No tienes cuenta? <a href="#" id="show-register">Crear cuenta</a></p>
+          </div>
+
+          <!-- Register -->
+          <div id="auth-register" class="hidden">
+            <h2>Crea tu cuenta</h2>
+            <p class="auth-subtitle">Regístrate gratis y comienza en menos de un minuto</p>
+            <form id="register-form">
+              <div class="field">
+                <label for="reg-username">Nombre de usuario</label>
+                <input type="text" id="reg-username" placeholder="tu_usuario" required />
+              </div>
+              <div class="field">
+                <label for="reg-email">Email</label>
+                <input type="email" id="reg-email" placeholder="tu@email.com" required />
+              </div>
+              <div class="field">
+                <label for="reg-password">Contraseña</label>
+                <input type="password" id="reg-password" placeholder="Mínimo 6 caracteres" required minlength="6" />
+              </div>
+              <button type="submit" class="btn btn-primary btn-full">Crear cuenta</button>
+              <p id="register-error" class="error-text"></p>
+            </form>
+            <p class="auth-switch">¿Ya tienes una cuenta? <a href="#" id="show-login">Iniciar sesión</a></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ PRICING MODAL ═══════════════════════════════════════ -->
+    <section class="pricing-section hidden" id="pricing">
+      <div class="container">
+        <div class="section-header">
+          <h2 class="section-title">Planes y precios</h2>
+          <p class="section-subtitle">Elige el plan que mejor se adapte a tu proyecto. Todos incluyen acceso a la documentación y playground.</p>
+        </div>
+        <div class="pricing-grid" id="pricing-grid">
+          <!-- Se llena dinámicamente -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ DASHBOARD (panel de control) ════════════════════════ -->
+    <section class="dashboard-section hidden" id="dashboard">
+      <div class="container">
+        <div class="dash-header">
+          <div>
+            <h2>Panel de Control</h2>
+            <p class="muted">Gestiona tu cuenta, créditos y API key</p>
+          </div>
+          <button class="btn btn-ghost" id="dash-logout">Cerrar sesión</button>
+        </div>
+
+        <div class="dash-stats" id="dash-stats">
+          <div class="stat-card">
+            <div class="stat-value" id="dash-credits">0</div>
+            <div class="stat-label">Créditos disponibles</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="dash-plan">Free</div>
+            <div class="stat-label">Plan actual</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="dash-endpoints-count">78</div>
+            <div class="stat-label">Endpoints accesibles</div>
+          </div>
+        </div>
+
+        <div class="dash-grid">
+          <div class="dash-card">
+            <h3>Tu API Key</h3>
+            <div class="apikey-box">
+              <code id="dash-apikey">—</code>
+              <button class="btn btn-sm" id="copy-apikey">Copiar</button>
+            </div>
+            <p class="muted">Usa esta clave en tus peticiones HTTP como header <code>X-API-Key</code></p>
+          </div>
+
+          <div class="dash-card">
+            <h3>Canjear cupón</h3>
+            <form id="dash-coupon-form" class="coupon-form">
+              <input type="text" id="dash-coupon-code" placeholder="Código de cupón" class="coupon-input" />
+              <button type="submit" class="btn btn-primary btn-sm">Canjear</button>
+            </form>
+            <p id="dash-coupon-msg" class="coupon-msg"></p>
+          </div>
+
+          <div class="dash-card dash-card-wide">
+            <h3>Últimas transacciones</h3>
+            <div class="table-wrap">
+              <table id="dash-transactions">
+                <thead>
+                  <tr><th>Tipo</th><th>Monto</th><th>Balance</th><th>Descripción</th><th>Fecha</th></tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="dash-card">
+            <h3>Comprar créditos</h3>
+            <p class="muted">Actualiza tu plan para obtener más créditos y acceso a endpoints premium.</p>
+            <a href="#pricing" class="btn btn-primary btn-sm" id="dash-upgrade">Ver planes</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ FOOTER ══════════════════════════════════════════════ -->
+    <footer class="footer">
+      <div class="container">
+        <div class="footer-grid">
+          <div class="footer-brand">
+            <div class="footer-logo">
+              <span class="nav-icon">✦</span>
+              <span class="nav-logo">StellarWA</span>
+            </div>
+            <p>Infraestructura API de alta performance para bots y aplicaciones.</p>
+          </div>
+          <div class="footer-links">
+            <h4>Producto</h4>
+            <a href="#endpoints">Endpoints</a>
+            <a href="#pricing">Precios</a>
+            <a href="#">Documentación</a>
+            <a href="#health">Estado</a>
+          </div>
+          <div class="footer-links">
+            <h4>Soporte</h4>
+            <a href="#faq">FAQ</a>
+            <a href="#">WhatsApp</a>
+            <a href="#">Email</a>
+          </div>
+          <div class="footer-links">
+            <h4>Legal</h4>
+            <a href="#">Términos</a>
+            <a href="#">Privacidad</a>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <p>© 2026 StellarWA. Todos los derechos reservados.</p>
+        </div>
+      </div>
+    </footer>
 
     <div id="toasts" class="toasts"></div>
 
