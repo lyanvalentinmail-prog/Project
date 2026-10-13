@@ -98,9 +98,6 @@ const state = {
   newTicketOpen: false,
   theme: localStorage.getItem('stellar_theme') || 'dark',
   connectTarget: null,
-  connectKey: '',
-  connectError: '',
-  connectLoading: false,
   editTarget: null,
   flow: {
     step: 1,
@@ -112,9 +109,6 @@ const state = {
     linkData: null,
     loading: false,
     error: '',
-    connectKey: '',
-    connectError: '',
-    connectLoading: false,
   },
 };
 
@@ -247,17 +241,13 @@ async function request(path, options = {}) {
 
 function instanceState(instance) {
   const status = String(instance.status || 'created').toLowerCase();
-  const open = status === 'open' || instance.live === true;
+  const open = status === 'open' || status === 'connected';
   const linking = ['starting', 'qr', 'pairing', 'connecting'].includes(status);
   const isError = status === 'error' || status === 'loggedout';
-  const activated = Boolean(instance.activated);
   if (isError) return { key: 'error', label: 'Revisar', className: 'status-error' };
-  if (open && activated) return { key: 'online', label: 'En línea', className: '' };
-  if (open && !activated) return { key: 'inactive', label: 'Conectado · Sin activar', className: 'status-offline' };
-  if (linking && activated) return { key: 'linking', label: 'Vinculando…', className: 'status-offline' };
-  if (linking && !activated) return { key: 'linking', label: 'Vinculando · Sin activar', className: 'status-offline' };
-  if (activated) return { key: 'offline', label: 'Desconectado', className: 'status-offline' };
-  return { key: 'created', label: 'Desconectado · Sin activar', className: 'status-offline' };
+  if (open) return { key: 'online', label: 'En línea', className: '' };
+  if (linking) return { key: 'linking', label: 'Vinculando…', className: 'status-offline' };
+  return { key: 'offline', label: 'Desconectado', className: 'status-offline' };
 }
 
 function brandMarkup() {
@@ -330,7 +320,7 @@ function renderLanding() {
   const uptime = state.system ? formatUptime(state.system.server.uptimeMs) : '—';
   const questions = [
     { q: '¿Es seguro vincular mi número?', a: 'Sí. Usamos el protocolo oficial WhatsApp Multi-Device con cifrado de extremo a extremo. Tu sesión se guarda cifrada en el servidor y no tenemos acceso a tus chats.' },
-    { q: '¿Cómo activo mi bot?', a: 'Al crear un bot queda desconectado. En Conectar escribes .key desde WhatsApp, el bot te da una clave y la pegas en la página: ahí queda activado.' },
+    { q: '¿Cómo activo mi bot?', a: 'Crea tu bot y abre Conectar. El panel muestra el QR o código de vinculación de WhatsApp. Vincula tu teléfono y ya podrás usar el bot, sin pedir una clave por comando.' },
     { q: '¿Qué prefijos puedo usar?', a: 'Al crear cada bot eliges su prefijo de comandos: # - + . / (por defecto el punto). Puedes cambiarlo después desde Mis Bots.' },
     { q: '¿Qué datos muestra el panel?', a: 'Solo datos reales: el estado de tus sesiones, los QR y pairing codes que emite WhatsApp, los grupos sincronizados y la telemetría real del servidor.' },
     { q: '¿Qué pasa si el bot se desconecta?', a: 'El sistema detecta la caída y reconecta automáticamente con reintentos progresivos. Puedes ver el estado en vivo en Métricas.' },
@@ -344,7 +334,7 @@ function renderLanding() {
         <div class="landing-hero-copy">
           <span class="hero-version"><span class="pulse-dot"></span> Plataforma oficial · panel en vivo</span>
           <h1 class="landing-title" id="landing-title"><span class="title-line">Automatiza WhatsApp</span><span class="title-line">con <span class="gradient-text">Stellar Intelligence</span></span></h1>
-          <p class="landing-lede">Gestión de <strong>SubBots</strong> con conexión real por QR o pairing code, activación con clave <code>.key</code> y panel unificado para todos tus números.</p>
+          <p class="landing-lede">Gestión de <strong>SubBots</strong> con conexión real por QR o pairing code, sin clave de activación y panel unificado para todos tus números.</p>
           <div class="landing-actions">
             <a class="btn btn-primary btn-large" href="/home" data-page="home">Ir al Panel ${icon('arrow-right')}</a>
             <a class="btn btn-outline btn-large" href="/register" data-page="register">Crear Bot ${icon('plus')}</a>
@@ -360,7 +350,7 @@ function renderLanding() {
             <div class="showcase-body">
               <div class="showcase-bot"><span class="bot-orb">${icon('bot')}</span><span><strong>SubBots registrados</strong><small>WhatsApp Multi-Device</small></span><span class="status-tag"><i class="pulse-dot"></i> ${connected} en línea</span></div>
               <div class="showcase-stats"><div class="showcase-stat"><b>${formatNumber(totalBots)}</b><span>Bots creados</span></div><div class="showcase-stat"><b>${formatNumber(groups)}</b><span>Grupos</span></div><div class="showcase-stat"><b>${formatNumber(commands)}</b><span>Comandos</span></div></div>
-              <div class="showcase-connection">${icon('shield')}<span><b>Activación con .key</b> · clave de un solo uso desde WhatsApp</span></div>
+              <div class="showcase-connection">${icon('shield')}<span><b>Conexión directa</b> · QR o código desde el panel</span></div>
             </div>
           </div>
         </div>
@@ -377,7 +367,7 @@ function renderLanding() {
         <div class="section-heading center"><span class="section-kicker">${icon('spark')} Cómo funciona</span><h2 class="section-title">Listo en <span class="gradient-text">3 simples pasos</span></h2><p class="section-copy">Setup en menos de 2 minutos. Sin servidores propios, sin configuración compleja.</p></div>
         <div class="steps-grid">
           <article class="card card-hover step-card"><span class="step-number">01</span><h3>Crea tu bot</h3><p>Elige nombre, número y prefijo de comandos (# - + . /). El bot nace desconectado hasta que lo actives.</p></article>
-          <article class="card card-hover step-card"><span class="step-number">02</span><h3>Actívalo con .key</h3><p>Escribe .key desde WhatsApp, copia la clave que te devuelve el bot y pégala en el panel para activarlo.</p></article>
+          <article class="card card-hover step-card"><span class="step-number">02</span><h3>Vincula WhatsApp</h3><p>Obtén el QR o código desde el panel y vincula tu teléfono. No necesitas enviar ningún comando.</p></article>
           <article class="card card-hover step-card"><span class="step-number">03</span><h3>Vincula y usa</h3><p>Escanea el QR o escribe el pairing code real de WhatsApp. Luego usa tus comandos en los grupos.</p></article>
         </div>
       </section>
@@ -385,7 +375,7 @@ function renderLanding() {
       <section class="section-block" id="benefits">
         <div class="section-heading center"><span class="section-kicker">${icon('shield')} ¿Por qué Stellar?</span><h2 class="section-title">Una plataforma que <span class="gradient-text">trabaja contigo</span></h2><p class="section-copy">Herramientas y controles pensados para que tus bots sigan disponibles y sean fáciles de administrar.</p></div>
         <div class="benefits-grid">
-          <article class="card card-hover benefit-card"><span class="benefit-icon">${icon('shield')}</span><h3>Activación con .key</h3><p>Cada bot se activa con una clave de un solo uso generada desde WhatsApp.</p></article>
+          <article class="card card-hover benefit-card"><span class="benefit-icon">${icon('shield')}</span><h3>Conexión directa</h3><p>Cada bot queda listo para usar en cuanto vinculas WhatsApp desde el panel.</p></article>
           <article class="card card-hover benefit-card"><span class="benefit-icon">${icon('hash')}</span><h3>Prefijo por bot</h3><p>Elige # - + . / al crear tu bot y cámbialo cuando quieras desde el panel.</p></article>
           <article class="card card-hover benefit-card"><span class="benefit-icon">${icon('link')}</span><h3>Reconexión automática</h3><p>Si la conexión cae, tu bot reintenta con reintentos progresivos sin perder la sesión.</p></article>
           <article class="card card-hover benefit-card"><span class="benefit-icon">${icon('chart')}</span><h3>Datos reales</h3><p>Estado de sesiones, grupos y telemetría del servidor en tiempo real. Nada inventado.</p></article>
@@ -399,7 +389,7 @@ function renderLanding() {
         <div class="faq-list">${questions}</div>
       </section>
 
-      <section class="section-block landing-cta"><span class="section-kicker">${icon('bolt')} Empieza hoy</span><h2 style="margin-top:12px">Automatiza WhatsApp en minutos</h2><p>Crea tu bot, actívalo con .key y vincula tu número. Sin servidor propio para comenzar.</p><div class="landing-actions"><a class="btn btn-primary btn-large" href="/home" data-page="home">Ir al Panel ${icon('arrow-right')}</a><a class="btn btn-outline btn-large" href="/register" data-page="register">Crear Bot ${icon('plus')}</a></div></section>
+      <section class="section-block landing-cta"><span class="section-kicker">${icon('bolt')} Empieza hoy</span><h2 style="margin-top:12px">Automatiza WhatsApp en minutos</h2><p>Crea tu bot y vincula tu número desde el panel. Sin servidor propio para comenzar.</p><div class="landing-actions"><a class="btn btn-primary btn-large" href="/home" data-page="home">Ir al Panel ${icon('arrow-right')}</a><a class="btn btn-outline btn-large" href="/register" data-page="register">Crear Bot ${icon('plus')}</a></div></section>
       <footer class="site-footer"><a class="site-footer-brand" href="/">${brandMarkup()}<span>Stellar Wa</span></a><span>© 2025–2026 Stellar The Best's Corp. Todos los derechos reservados.</span><div class="footer-links"><a href="#how">Cómo empezar</a><a href="#faq">Soporte</a></div></footer>
     </div>`;
 }
@@ -416,7 +406,7 @@ function renderHome() {
   const activated = state.instances.filter((item) => item.activated).length;
   const counts = [
     { label: 'Tus Bots', value: formatNumber(state.instances.length), note: `de ${state.me?.limits?.maxInstances ?? 3} permitidos`, icon: 'bot', indicator: true },
-    { label: 'Activados', value: formatNumber(activated), note: 'con clave .key', icon: 'shield' },
+    { label: 'Activados', value: formatNumber(activated), note: 'sin clave adicional', icon: 'shield' },
     { label: 'En línea', value: formatNumber(connected), note: 'sesiones conectadas', icon: 'bolt', indicator: true },
     { label: 'Grupos', value: formatNumber(state.stats?.groups ?? 0), note: 'sincronizados', icon: 'users' },
     { label: 'Integrantes', value: formatNumber(state.stats?.registered ?? 0), note: 'registrados', icon: 'crown' },
@@ -424,15 +414,15 @@ function renderHome() {
   ];
   return `<div class="page-content">
     <section class="welcome-hero">
-      <div class="welcome-copy"><span class="section-kicker">${icon('spark')} Información · Panel central</span><h1>Hola, <span class="gradient-text">${user}</span></h1><p>Controla tus sesiones, activa tus SubBots con .key y revisa el estado real de la plataforma desde un solo lugar.</p><div class="welcome-actions"><a class="btn btn-primary" href="/register" data-page="register">${icon('plus')} Registrar bot</a><a class="btn btn-outline" href="/bots" data-page="bots">${icon('bot')} Mis Bots</a></div></div>
+      <div class="welcome-copy"><span class="section-kicker">${icon('spark')} Información · Panel central</span><h1>Hola, <span class="gradient-text">${user}</span></h1><p>Controla tus sesiones, vincula tus SubBots con WhatsApp y revisa el estado real de la plataforma desde un solo lugar.</p><div class="welcome-actions"><a class="btn btn-primary" href="/register" data-page="register">${icon('plus')} Registrar bot</a><a class="btn btn-outline" href="/bots" data-page="bots">${icon('bot')} Mis Bots</a></div></div>
       <div class="welcome-emblem" aria-hidden="true">${icon('spark')}</div>
     </section>
 
-    <section class="info-banner"><span class="info-symbol">${icon('shield')}</span><div><h2>Activación con .key</h2><p>Al crear un bot queda desconectado. Para activarlo, escribe <strong>.key</strong> desde WhatsApp, copia la clave que te devuelve y pégala en Conectar bot.</p></div><a class="btn btn-primary btn-small" href="/register" data-page="register">Crear bot ${icon('arrow-right')}</a></section>
+    <section class="info-banner"><span class="info-symbol">${icon('shield')}</span><div><h2>Conexión directa</h2><p>Al crear un bot solo falta vincular WhatsApp. Abre Conectar bot y obtén el QR o código directamente en el panel. No necesitas una clave de activación.</p></div><a class="btn btn-primary btn-small" href="/register" data-page="register">Crear bot ${icon('arrow-right')}</a></section>
 
     <section class="section-block" style="margin-top:34px"><div class="section-heading"><div><span class="section-kicker">${icon('chart')} Resumen</span><h2 class="section-title">Tu plataforma, de un vistazo</h2><p class="section-copy">Datos reales de la base de datos y de tus sesiones.</p></div><button class="btn btn-outline btn-small" type="button" data-action="refresh-data">${icon('link')} Actualizar datos</button></div><div class="metrics-grid">${counts.map(renderMetricCard).join('')}</div></section>
 
-    <section class="section-block"><div class="section-heading"><div><span class="section-kicker">${icon('bolt')} Accesos rápidos</span><h2 class="section-title">¿Qué quieres hacer?</h2></div></div><div class="shortcut-grid"><a class="card card-hover shortcut-card uv-card" href="/register" data-page="register"><span class="shortcut-icon">${icon('plus')}</span><span><strong>Crear un bot</strong><small>Número, prefijo y activación con .key</small></span><span class="shortcut-arrow">${icon('arrow-right')}</span></a><a class="card card-hover shortcut-card uv-card" href="/cmds" data-page="commands"><span class="shortcut-icon">${icon('code')}</span><span><strong>Comandos</strong><small>Referencia completa del bot</small></span><span class="shortcut-arrow">${icon('arrow-right')}</span></a></div></section>
+    <section class="section-block"><div class="section-heading"><div><span class="section-kicker">${icon('bolt')} Accesos rápidos</span><h2 class="section-title">¿Qué quieres hacer?</h2></div></div><div class="shortcut-grid"><a class="card card-hover shortcut-card uv-card" href="/register" data-page="register"><span class="shortcut-icon">${icon('plus')}</span><span><strong>Crear un bot</strong><small>Número, prefijo y vinculación directa</small></span><span class="shortcut-arrow">${icon('arrow-right')}</span></a><a class="card card-hover shortcut-card uv-card" href="/cmds" data-page="commands"><span class="shortcut-icon">${icon('code')}</span><span><strong>Comandos</strong><small>Referencia completa del bot</small></span><span class="shortcut-arrow">${icon('arrow-right')}</span></a></div></section>
 
     <section class="section-block"><div class="section-heading"><div><span class="section-kicker">${icon('users')} Comunidad</span><h2 class="section-title">Siempre cerca</h2></div></div><div class="shortcut-grid"><a class="card card-hover shortcut-card uv-card" href="https://web.stellarwa.xyz/channel/api" target="_blank" rel="noreferrer"><span class="shortcut-icon">${icon('whatsapp')}</span><span><strong>Canal de WhatsApp</strong><small>Avisos sobre futuras actualizaciones</small></span><span class="shortcut-arrow">${icon('arrow-right')}</span></a><a class="card card-hover shortcut-card uv-card" href="/tickets" data-page="tickets"><span class="shortcut-icon">${icon('headset')}</span><span><strong>Abrir ticket</strong><small>Contactar soporte directo</small></span><span class="shortcut-arrow">${icon('arrow-right')}</span></a></div></section>
     ${pageFooter()}
@@ -448,16 +438,16 @@ function renderBotCard(instance) {
   const phone = escapeHtml(instance.phoneMasked || 'Número oculto');
   const mode = instance.pairingMode === 'pairing' ? 'Código de 8 dígitos' : 'Código QR';
   const prefix = escapeHtml(instance.prefix || '.');
-  return `<article class="card bot-card"><span class="bot-card-icon">${icon('bot')}</span><div class="bot-card-main"><div class="bot-card-title"><h3>${name}</h3><span class="status-badge ${status.className}"><i class="pulse-dot"></i>${status.label}</span></div><p>${phone}</p><div class="bot-card-meta"><span>${icon('hash')} prefijo <strong>${prefix}</strong></span><span>${icon('link')}${escapeHtml(mode)}</span><span>${icon('users')}${formatNumber(instance.groups || 0)} grupos</span><span>${icon('shield')}${instance.activated ? 'Activado' : 'Sin activar'}</span></div></div><div class="bot-card-actions"><button class="btn ${status.key === 'online' ? 'btn-outline' : 'btn-primary'} btn-small" type="button" data-action="open-connect" data-id="${id}">${icon('whatsapp')} Conectar en WhatsApp</button><button class="btn btn-outline btn-small" type="button" data-action="edit-instance" data-id="${id}">Editar</button>${status.key === 'online' || status.key === 'inactive' ? `<button class="btn btn-outline btn-small" type="button" data-action="stop-instance" data-id="${id}">Detener</button>` : ''}<button class="btn btn-outline btn-small" type="button" data-action="delete-instance" data-id="${id}">Eliminar</button></div></article>`;
+  return `<article class="card bot-card"><span class="bot-card-icon">${icon('bot')}</span><div class="bot-card-main"><div class="bot-card-title"><h3>${name}</h3><span class="status-badge ${status.className}"><i class="pulse-dot"></i>${status.label}</span></div><p>${phone}</p><div class="bot-card-meta"><span>${icon('hash')} prefijo <strong>${prefix}</strong></span><span>${icon('link')}${escapeHtml(mode)}</span><span>${icon('users')}${formatNumber(instance.groups || 0)} grupos</span><span>${icon('shield')}Sin clave de activación</span></div></div><div class="bot-card-actions"><button class="btn ${status.key === 'online' ? 'btn-outline' : 'btn-primary'} btn-small" type="button" data-action="open-connect" data-id="${id}">${icon('whatsapp')} Conectar en WhatsApp</button><button class="btn btn-outline btn-small" type="button" data-action="edit-instance" data-id="${id}">Editar</button>${status.key === 'online' ? `<button class="btn btn-outline btn-small" type="button" data-action="stop-instance" data-id="${id}">Detener</button>` : ''}<button class="btn btn-outline btn-small" type="button" data-action="delete-instance" data-id="${id}">Eliminar</button></div></article>`;
 }
 
 function renderBots() {
   const instances = state.instances;
   const connected = instances.filter((instance) => instance.status === 'open').length;
   const activated = instances.filter((instance) => instance.activated).length;
-  return `<div class="page-content"><div class="page-heading"><div><span class="section-kicker">${icon('bot')} Sesiones</span><h1>Mis Bots</h1><p>Gestiona tus sesiones: actívalas con la clave de .key, vincula números y cambia su prefijo.</p></div><div class="page-heading-actions"><a class="btn btn-primary" href="/register" data-page="register">${icon('plus')} Crear Bot</a></div></div>
+  return `<div class="page-content"><div class="page-heading"><div><span class="section-kicker">${icon('bot')} Sesiones</span><h1>Mis Bots</h1><p>Gestiona tus sesiones: vincula números y cambia su prefijo, sin claves de activación.</p></div><div class="page-heading-actions"><a class="btn btn-primary" href="/register" data-page="register">${icon('plus')} Crear Bot</a></div></div>
     <div class="bots-summary"><article class="card summary-tile"><span>Bots registrados</span><strong>${instances.length}</strong></article><article class="card summary-tile"><span>Activados</span><strong class="green">${activated}</strong></article><article class="card summary-tile"><span>En línea</span><strong class="green">${connected}</strong></article><article class="card summary-tile"><span>Límite de instancias</span><strong>${state.me?.limits?.maxInstances ?? 3}</strong></article></div>
-    ${instances.length ? `<div class="bot-list">${instances.map(renderBotCard).join('')}</div>` : `<div class="empty-state"><span class="empty-state-icon">${icon('bot')}</span><h2>No tienes bots registrados aún</h2><p>Crea tu primer bot: elige nombre, número y prefijo. Nace desconectado y lo activas con la clave de .key.</p><button class="btn btn-primary" type="button" data-page="register">${icon('plus')} Crear Bot</button></div>`}
+    ${instances.length ? `<div class="bot-list">${instances.map(renderBotCard).join('')}</div>` : `<div class="empty-state"><span class="empty-state-icon">${icon('bot')}</span><h2>No tienes bots registrados aún</h2><p>Crea tu primer bot: elige nombre, número y prefijo. Vincula WhatsApp desde el panel y empieza a usarlo.</p><button class="btn btn-primary" type="button" data-page="register">${icon('plus')} Crear Bot</button></div>`}
     ${pageFooter()}</div>`;
 }
 
@@ -482,7 +472,7 @@ function renderWizard() {
     content = `<div class="wizard-form"><label class="field"><span class="field-label">Número del bot</span><input class="text-input" type="tel" inputmode="tel" name="flow-phone" data-flow="phone" value="${phoneValue}" placeholder="+57 301 944 8245" autocomplete="tel" /><span class="field-hint">WhatsApp enviará el código de vinculación a este número.</span></label><div class="field"><span class="field-label">Cómo quieres vincularlo</span><div class="pairing-methods"><button class="pairing-option ${flow.pairingMode === 'qr' ? 'is-selected' : ''}" type="button" data-action="select-method" data-method="qr"><span class="pairing-option-icon">${icon('qr')}</span><span><strong>Código QR</strong><small>Escaneas un código desde el dispositivo del bot.</small></span></button><button class="pairing-option ${flow.pairingMode === 'pairing' ? 'is-selected' : ''}" type="button" data-action="select-method" data-method="pairing"><span class="pairing-option-icon">${icon('hash')}</span><span><strong>Código de 8 dígitos <span class="visually-hidden">Pairing code</span></strong><small>Lo escribes en el dispositivo del bot.</small></span></button></div></div></div>`;
   } else if (step === 3) {
     title = 'Resumen';
-    description = 'Revisa los datos. El bot se creará desconectado: la activación es con .key.';
+    description = 'Revisa los datos. Después podrás vincular WhatsApp con el QR o código del panel.';
     const server = state.system?.server;
     content = `<div class="wizard-form"><div class="callout">${icon('bulb')}<span><strong>Este es el servidor real donde correrá tu bot.</strong><br />${escapeHtml(server?.hostname || 'Servidor')} · ${escapeHtml(server?.platform || '—')} · Node ${escapeHtml(server?.node || '—')}</span></div><div class="profile-details"><div class="profile-detail"><span>Nombre</span><strong>${escapeHtml(flow.name || '—')}</strong></div><div class="profile-detail"><span>Prefijo</span><strong class="mono">${escapeHtml(flow.prefix)}</strong></div><div class="profile-detail"><span>Número</span><strong>${escapeHtml(flow.phone || '—')}</strong></div><div class="profile-detail"><span>Vinculación</span><strong>${flow.pairingMode === 'qr' ? 'Código QR' : 'Código de 8 dígitos'}</strong></div></div></div>`;
   } else if (step === 4) {
@@ -570,13 +560,13 @@ function maybeAutoRefreshPairing() {
   requestPairing(id, { silent: true });
 }
 
-function pairingCard({ id, mode = 'pairing', connected = false, activated = false, context = 'modal' }) {
+function pairingCard({ id, mode = 'pairing', connected = false, context = 'modal' }) {
   const pairing = state.pairing.id === id ? state.pairing : { ...state.pairing, id, formatted: '', issuedAt: null, error: '' };
   const left = state.pairing.id === id ? pairingSecondsLeft() : null;
   const isQr = mode === 'qr';
 
   if (connected) {
-    return `<div class="pairing-card" data-pairing-card><div class="pairing-card-head"><div><h3>${icon('check')} Sesión vinculada</h3><small>Este sub-bot ya está conectado a WhatsApp.</small></div></div>${activated ? '<p class="pairing-wa-note">Activado con la clave de <b>.key</b>: ya puede usar todos sus comandos.</p>' : `<p class="pairing-wa-note">Falta activarlo: escribe <code>.key</code> desde WhatsApp y pega la clave aquí abajo.</p>`}</div>`;
+    return `<div class="pairing-card" data-pairing-card><div class="pairing-card-head"><div><h3>${icon('check')} Sesión vinculada</h3><small>Este sub-bot ya está conectado a WhatsApp.</small></div></div><p class="pairing-wa-note">Ya puedes usar los comandos del bot. No necesitas ninguna clave de activación.</p></div>`;
   }
 
   return `<div class="pairing-card" data-pairing-card>
@@ -629,42 +619,35 @@ async function requestPairing(id, { silent = false } = {}) {
   }
 }
 
-/** Panel de conexión del asistente: activación con `.key` + vinculación real. */
+/** Panel de conexión del asistente: vinculación directa con WhatsApp. */
 function renderConnectStep() {
   const flow = state.flow;
   const link = flow.linkData ?? {};
   const target = state.instances.find((item) => item.id === flow.instanceId) ?? {};
-  const activated = Boolean(target.activated ?? link.activated);
   const connected = ['open', 'connected'].includes(String(link.status || '').toLowerCase());
   const prefix = escapeHtml(target.prefix || flow.prefix || '.');
   return `<div class="page-content"><div class="wizard-wrap"><section class="wizard-card wizard-step-5" aria-labelledby="wizard-title">
     <span class="wizard-step-label">CONECTAR EN WHATSAPP</span>
     <h1 class="wizard-title" id="wizard-title">Conecta tu bot</h1>
-    <p class="wizard-description">${escapeHtml(flow.name || target.name || 'Tu bot')} nació <strong>desconectado</strong>. Actívalo con <code>.key</code> y vincúlalo con WhatsApp.</p>
+    <p class="wizard-description">${escapeHtml(flow.name || target.name || 'Tu bot')} está listo para vincularse. Usa el QR o código de este panel para conectar WhatsApp.</p>
 
     <div class="bots-summary" style="margin:14px 0">
-      <article class="card summary-tile"><span>Activado</span><strong class="${activated ? 'green' : ''}">${activated ? 'Sí' : 'No'}</strong></article>
       <article class="card summary-tile"><span>Vinculado</span><strong class="${connected ? 'green' : ''}">${connected ? 'Sí' : 'No'}</strong></article>
       <article class="card summary-tile"><span>Prefijo</span><strong class="mono">${prefix}</strong></article>
     </div>
 
     ${flow.loading ? `<div class="pairing-stage"><div class="atom-loader"><div class="react-star"><div class="nucleus"></div><div class="electron electron-1"></div><div class="electron electron-2"></div><div class="electron electron-3"></div></div></div><p>Pidiendo a WhatsApp el código real de vinculación…</p></div>` : ''}
 
-    ${!flow.loading ? pairingCard({ id: flow.instanceId, mode: flow.pairingMode, connected, activated, context: 'wizard' }) : ''}
+    ${!flow.loading ? pairingCard({ id: flow.instanceId, mode: flow.pairingMode, connected, context: 'wizard' }) : ''}
     ${!flow.loading && flow.pairingMode === 'qr' && link.qrDataUrl ? `<div class="qr-frame"><img src="${escapeHtml(link.qrDataUrl)}" alt="Código QR real de WhatsApp para vincular el bot" /></div><span class="expiry-label">QR real de WhatsApp · se renueva cada ~${state.me?.qrExpiresInSec ?? 20}s</span>` : ''}
 
-    <div class="callout" style="margin-top:18px">${icon('shield')}<span><strong>Paso final · Pide tu clave desde WhatsApp</strong><br />Escribe <code>.key</code> desde WhatsApp a cualquier bot conectado (o al tuyo si ya está en línea). El bot te devolverá la clave de activación y el pairing code real.</span></div>
-
-    <form class="wizard-form" id="activate-key-form" data-id="${escapeHtml(flow.instanceId || '')}">
-      <label class="field"><span class="field-label">Clave de activación</span><input class="text-input mono" type="text" name="activation-key" value="${escapeHtml(flow.connectKey || '')}" placeholder="ABCD-2345" autocomplete="off" maxlength="20" /><span class="field-hint">Pega aquí la clave que te dio el bot con <code>.key</code>.</span></label>
-      <button class="btn btn-primary btn-full" type="submit" ${flow.connectLoading ? 'disabled' : ''}>${icon('check')} Activar bot</button>
-    </form>
-    ${flow.connectError ? `<p class="link-error" role="alert">${escapeHtml(flow.connectError)}</p>` : ''}
+    <div class="callout" style="margin-top:18px">${icon('shield')}<span><strong>Sin clave de activación</strong><br />Vincula el número con el QR o código de este panel. En cuanto se conecte, podrás usar los comandos.</span></div>
+    ${flow.error ? `<p class="link-error" role="alert">${escapeHtml(flow.error)}</p>` : ''}
     ${link.lastError ? `<p class="link-error" role="alert">${escapeHtml(link.lastError)}</p>` : ''}
 
     <div class="wizard-actions">
       <button class="btn btn-outline" type="button" data-action="wizard-back">${icon('arrow-left')} Cambiar datos</button>
-      ${connected && activated ? `<button class="btn btn-primary" type="button" data-action="finish-flow">Finalizar ${icon('arrow-right')}</button>` : `<button class="btn btn-outline" type="button" data-action="check-link" data-id="${escapeHtml(flow.instanceId || '')}">${icon('link')} Comprobar ahora</button>`}
+      ${connected ? `<button class="btn btn-primary" type="button" data-action="finish-flow">Finalizar ${icon('arrow-right')}</button>` : `<button class="btn btn-outline" type="button" data-action="check-link" data-id="${escapeHtml(flow.instanceId || '')}">${icon('link')} Comprobar ahora</button>`}
     </div>
   </section>${pageFooter()}</div></div>`;
 }
@@ -675,28 +658,23 @@ function renderConnectModalInto(host) {
   const instance = state.connectTarget;
   if (!instance) { host.innerHTML = ''; return; }
   const link = instance.linkData ?? {};
-  const activated = Boolean(instance.activated);
   const connected = ['open', 'connected'].includes(String(link.status || instance.status || '').toLowerCase());
   const mode = instance.pairingMode || 'pairing';
   host.innerHTML = `<button class="icon-button modal-close" type="button" data-action="close-modal" aria-label="Cerrar">${icon('close')}</button>
     <span class="section-kicker">${icon('whatsapp')} Conectar en WhatsApp</span>
     <h2 id="modal-title" style="margin-top:11px">${escapeHtml(instance.name || 'SubBot')}</h2>
-    <p class="modal-description">${escapeHtml(instance.phoneMasked || '')} · prefijo <strong class="mono">${escapeHtml(instance.prefix || '.')}</strong> · ${activated ? 'Activado' : 'Sin activar'} · ${connected ? 'Vinculado' : 'Sin vincular'}</p>
+    <p class="modal-description">${escapeHtml(instance.phoneMasked || '')} · prefijo <strong class="mono">${escapeHtml(instance.prefix || '.')}</strong> · ${connected ? 'Vinculado' : 'Sin vincular'}</p>
 
-    ${pairingCard({ id: instance.id, mode, connected, activated, context: 'modal' })}
+    ${pairingCard({ id: instance.id, mode, connected, context: 'modal' })}
     ${mode === 'qr' && link.qrDataUrl && !connected ? `<div class="qr-frame"><img src="${escapeHtml(link.qrDataUrl)}" alt="Código QR real de WhatsApp" /></div><span class="expiry-label">QR real de WhatsApp · se renueva cada ~${state.me?.qrExpiresInSec ?? 20}s</span>` : ''}
     ${state.pairing.loading ? `<div class="pairing-stage"><div class="atom-loader"><div class="react-star"><div class="nucleus"></div><div class="electron electron-1"></div><div class="electron electron-2"></div><div class="electron electron-3"></div></div></div><p>Pidiendo a WhatsApp el código de este número…</p></div>` : ''}
 
-    <div class="callout" style="margin-top:14px">${icon('shield')}<span><strong>Activa tu bot con .key</strong><br />Escribe <code>.key</code> desde WhatsApp a cualquier bot conectado y pega aquí la clave que te devuelve.</span></div>
-    <form class="modal-form" id="activate-key-form" data-id="${escapeHtml(instance.id)}">
-      <label class="field"><span class="field-label">Clave de activación</span><input class="text-input mono" type="text" name="activation-key" value="${escapeHtml(state.connectKey || '')}" placeholder="ABCD-2345" autocomplete="off" maxlength="20" ${activated ? 'disabled' : ''} /></label>
-      ${activated ? `<p class="field-hint">Este bot ya está activado.</p>` : `<button class="btn btn-primary btn-full" type="submit" ${state.connectLoading ? 'disabled' : ''}>${icon('check')} Activar bot</button>`}
-    </form>
-    ${state.connectError ? `<p class="link-error" role="alert">${escapeHtml(state.connectError)}</p>` : ''}
+    <div class="callout" style="margin-top:14px">${icon('shield')}<span>No necesitas una clave de activación. Al vincular WhatsApp, el bot queda listo para usar.</span></div>
+    ${link.lastError ? `<p class="link-error" role="alert">${escapeHtml(link.lastError)}</p>` : ''}
 
     <div class="wizard-actions" style="margin-top:14px">
       <button class="btn btn-outline" type="button" data-action="close-modal">${icon('arrow-left')} Cerrar</button>
-      ${connected && activated ? `<button class="btn btn-primary" type="button" data-action="close-modal">Listo ${icon('check')}</button>` : ''}
+      ${connected ? `<button class="btn btn-primary" type="button" data-action="close-modal">Listo ${icon('check')}</button>` : ''}
     </div>`;
 }
 
@@ -718,17 +696,18 @@ function paintConnectModal({ force = false } = {}) {
 async function openConnect(instance) {
   state.modalMode = 'connect';
   state.connectTarget = { ...instance, linkData: null };
-  state.connectKey = '';
-  state.connectError = '';
-  state.connectLoading = false;
   state.pairing = { ...state.pairing, id: instance.id, formatted: '', issuedAt: null, error: '', loading: false };
   paint.last.modal = null;
   paintConnectModal({ force: true });
   const layer = document.querySelector('#modal-layer');
   if (layer) layer.hidden = false;
   document.body.classList.add('modal-open');
+  if (instance.pairingMode === 'qr' && instance.status !== 'open') {
+    await request(`/instances/${encodeURIComponent(instance.id)}/start`, { method: 'POST' })
+      .catch((error) => showToast(error.message, 'error'));
+  }
   await syncLink(instance.id);
-  if (instance.pairingMode === 'pairing' && !state.pairing.formatted) {
+  if (instance.status !== 'open' && instance.pairingMode === 'pairing' && !state.pairing.formatted) {
     // el registro quedó sin código: se pide a WhatsApp (real, no inventado)
     await requestPairing(instance.id, { silent: true });
   }
@@ -939,7 +918,7 @@ const commandExamples = [
   { group: 'Administración', names: ['add', 'expulsar', 'ban', 'unban', 'warn', 'pendientes'] },
 ];
 function renderCommands() {
-  return `<div class="page-content"><div class="page-heading"><div><span class="section-kicker">${icon('code')} Referencia</span><h1>Comandos</h1><p>Cada bot usa el prefijo que elegiste al crearlo: <code>#</code> <code>-</code> <code>+</code> <code>.</code> <code>/</code>. El comando de activación <code>.key</code> funciona con cualquiera de ellos.</p></div><label class="search-box" style="max-width:360px;flex:1">${icon('search')}<input class="text-input" id="command-search" type="search" placeholder="Buscar comando…" autocomplete="off" /></label></div><div class="command-grid">${commandExamples.map((group) => `<section class="card command-card"><h2>${escapeHtml(group.group)}</h2><div class="command-pills">${group.names.map((name) => `<button class="command-pill" type="button" data-action="copy-command" data-command="${escapeHtml(name)}"><code>${escapeHtml(name)}</code></button>`).join('')}</div></section>`).join('')}</div>${pageFooter()}</div>`;
+  return `<div class="page-content"><div class="page-heading"><div><span class="section-kicker">${icon('code')} Referencia</span><h1>Comandos</h1><p>Cada bot usa el prefijo que elegiste al crearlo: <code>#</code> <code>-</code> <code>+</code> <code>.</code> <code>/</code>. Puedes obtener el código de vinculación directamente desde el panel, sin comandos.</p></div><label class="search-box" style="max-width:360px;flex:1">${icon('search')}<input class="text-input" id="command-search" type="search" placeholder="Buscar comando…" autocomplete="off" /></label></div><div class="command-grid">${commandExamples.map((group) => `<section class="card command-card"><h2>${escapeHtml(group.group)}</h2><div class="command-pills">${group.names.map((name) => `<button class="command-pill" type="button" data-action="copy-command" data-command="${escapeHtml(name)}"><code>${escapeHtml(name)}</code></button>`).join('')}</div></section>`).join('')}</div>${pageFooter()}</div>`;
 }
 
 /* ── router de páginas ───────────────────────────────────────── */
@@ -1165,12 +1144,12 @@ function previousWizardStep() {
 }
 function resetWizard() {
   stopLinkWatch();
-  state.flow = { step: 1, name: '', prefix: '.', phone: '', pairingMode: 'pairing', instanceId: null, linkData: null, loading: false, error: '', connectKey: '', connectError: '', connectLoading: false };
+  state.flow = { step: 1, name: '', prefix: '.', phone: '', pairingMode: 'pairing', instanceId: null, linkData: null, loading: false, error: '' };
   state.pairing = { ...state.pairing, id: null, formatted: '', issuedAt: null, error: '', loading: false };
   navigate('register');
 }
 
-/** Crea el bot (desconectado) y abre la pantalla de conexión con `.key`. */
+/** Crea el bot y abre la pantalla de vinculación directa. */
 async function generateLink() {
   const flow = state.flow;
   if (flow.loading) return;
@@ -1189,7 +1168,7 @@ async function generateLink() {
       flow.instanceId = created.instance?.id;
       if (created.instance) state.instances = [created.instance, ...state.instances.filter((item) => item.id !== created.instance.id)];
       if (!flow.instanceId) throw new Error('El servidor no devolvió la instancia creada.');
-      showToast('Bot creado (desconectado). Actívalo con .key.', 'success');
+      showToast('Bot creado. Vincula WhatsApp para empezar a usarlo.', 'success');
     }
     // abre la sesión de vinculación (el QR/pairing code son REALES de WhatsApp)
     await request(`/instances/${encodeURIComponent(flow.instanceId)}/start`, { method: 'POST' }).catch((error) => {
@@ -1252,43 +1231,17 @@ async function refreshLink() {
   }
 }
 
-/** Canjea la clave de `.key` para activar el bot (flujo del panel). */
-async function activateInstance(id, key) {
-  if (!id) return;
-  const clean = String(key || '').trim();
-  if (!clean) {
-    const message = 'Escribe la clave que te dio el bot con el comando .key.';
-    if (state.connectTarget) { state.connectError = message; paintConnectModal({ force: true }); }
-    else { state.flow.connectError = message; renderPage({ force: true }); }
-    return;
-  }
-  if (state.connectTarget) { state.connectLoading = true; state.connectError = ''; paintConnectModal({ force: true }); }
-  else { state.flow.connectLoading = true; state.flow.connectError = ''; renderPage({ force: true }); }
-  try {
-    await request(`/instances/${encodeURIComponent(id)}/activate`, { method: 'POST', body: { key: clean } });
-    showToast('¡Bot activado! Ya puede usar todos sus comandos.', 'success');
-    if (state.connectTarget) { state.connectLoading = false; state.connectKey = ''; }
-    else { state.flow.connectLoading = false; state.flow.connectKey = ''; }
-    await loadAdminData({ quiet: true });
-    if (state.connectTarget) {
-      const updated = state.instances.find((item) => item.id === id);
-      if (updated) state.connectTarget = { ...state.connectTarget, ...updated };
-      paintConnectModal({ force: true });
-    } else {
-      renderPage({ force: true });
-      pollForLink();
-    }
-  } catch (error) {
-    const message = error.message || 'No se pudo activar el bot.';
-    if (state.connectTarget) { state.connectLoading = false; state.connectError = message; paintConnectModal({ force: true }); }
-    else { state.flow.connectLoading = false; state.flow.connectError = message; renderPage({ force: true }); }
-    showToast(message, 'error');
-  }
-}
-
 async function refreshConnectLink() {
   const instance = state.connectTarget;
   if (!instance) return;
+  if (instance.pairingMode === 'qr' && instance.status !== 'open') {
+    try {
+      await request(`/instances/${encodeURIComponent(instance.id)}/start`, { method: 'POST' });
+    } catch (error) {
+      showToast(error.message, 'error');
+      return;
+    }
+  }
   await syncLink(instance.id, { silent: true });
   if ((instance.pairingMode || 'pairing') === 'pairing') await requestPairing(instance.id, { silent: true });
   startLinkWatch(instance.id);
@@ -1620,10 +1573,7 @@ function handleInput(event) {
     $$('.command-pill').forEach((pill) => { pill.hidden = query && !pill.textContent.toLowerCase().includes(query); });
     $$('.command-card').forEach((card) => { card.hidden = query && ![...card.querySelectorAll('.command-pill')].some((pill) => !pill.hidden); });
   }
-  if (target.name === 'activation-key') {
-    if (state.connectTarget) state.connectKey = target.value;
-    else state.flow.connectKey = target.value;
-  }
+
 }
 
 function handleChange(event) {
@@ -1641,11 +1591,6 @@ function handleSubmit(event) {
   const form = event.target;
   if (!(form instanceof HTMLFormElement)) return;
   if (form.id === 'api-auth-form') { event.preventDefault(); submitApiAuth(form); }
-  else if (form.id === 'activate-key-form') {
-    event.preventDefault();
-    const key = new FormData(form).get('activation-key');
-    activateInstance(form.dataset.id, key);
-  }
   else if (form.id === 'edit-instance-form') {
     event.preventDefault();
     const data = new FormData(form);

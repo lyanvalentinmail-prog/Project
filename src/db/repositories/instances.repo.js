@@ -22,8 +22,7 @@ export function normalizePrefix(input, fallback = '.') {
 
 export const instancesRepo = {
   /**
-   * Crea una instancia. Por defecto queda DESCONECTADA y SIN ACTIVAR:
-   * la activación exige la clave que el bot entrega con `.key` en WhatsApp.
+   * Crea una instancia habilitada, pendiente de vincular con WhatsApp.
    */
   create({
     name,
@@ -31,7 +30,7 @@ export const instancesRepo = {
     pairingMode = 'qr',
     sessionDir,
     prefix = '.',
-    activated = false,
+    activated = true,
     autostart = false,
   }) {
     const id = newId(10);
@@ -113,7 +112,7 @@ export const instancesRepo = {
       .run(prefix, Date.now(), id);
   },
 
-  /** Marca el bot como activado (tras canjear la clave de `.key`). */
+  /** Actualiza el indicador de habilitación (compatibilidad con instancias antiguas). */
   setActivated(id, value = true) {
     getDb()
       .prepare(

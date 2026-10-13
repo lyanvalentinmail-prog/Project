@@ -162,15 +162,6 @@ export async function handleCommandMessage(ctx) {
   const parsed = parseCommand(ctx.text, ctx);
   if (!parsed) return false;
 
-  // Bot SIN ACTIVAR: solo responde al comando de activación (`.key`).
-  // La clave se canjea en el panel web y entonces el bot queda operativo.
-  const isKeyCommand = UNIVERSAL_COMMANDS.has(parsed.name);
-  const activated = ctx.instance == null || ctx.instance.activated !== 0;
-  if (!activated && !isKeyCommand) {
-    await applyResult(ctx, fail('sys.inactive', { instanceName: ctx.instance?.name ?? null }));
-    return true;
-  }
-
   return dispatch(ctx, parsed);
 }
 

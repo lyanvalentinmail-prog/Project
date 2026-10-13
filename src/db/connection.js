@@ -43,6 +43,16 @@ const MIGRATIONS = [
       database.exec(schema);
     },
   },
+  {
+    version: 4,
+    name: 'bots habilitados sin clave de activación',
+    up(database) {
+      // No cambia autostart: los bots detenidos siguen detenidos.
+      database.prepare(`UPDATE bot_instances
+        SET activated = 1, activated_at = COALESCE(activated_at, ?), updated_at = ?
+        WHERE activated = 0`).run(Date.now(), Date.now());
+    },
+  },
 ];
 
 /** Devuelve la conexión activa (la crea si aún no existe). */

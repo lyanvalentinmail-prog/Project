@@ -26,7 +26,7 @@ bot_instances 1───N groups 1───N users 1───0..1 roles
                         └──N audit_log
 
 pending_confirmations (independiente, con expiración)
-activation_keys (claves `.key` de un solo uso para activar bots)
+activation_keys (claves históricas de activación; ya no se necesitan)
 command_stats + counters (estadísticas reales del panel)
 web_tickets + web_users + plans + coupons (datos de la web, en la misma BD)
 meta (versión de esquema, fecha de instalación)
@@ -53,7 +53,7 @@ meta (versión de esquema, fecha de instalación)
 | `phone` | TEXT UNIQUE | Número internacional sin `+` (un número = un sub-bot) |
 | `pairing_mode` | TEXT | `'qr'` o `'pairing'` |
 | `prefix` | TEXT | Prefijo de comandos de ESTE bot: `#` `-` `+` `.` `/` (esquema v3) |
-| `activated` | INTEGER | 0 = sin activar (solo responde `.key`), 1 = activado con la clave (v3) |
+| `activated` | INTEGER | Indicador histórico; por defecto 1. Desde v4 no bloquea comandos y se habilitan las instancias antiguas. |
 | `activated_at` | INTEGER | Cuándo se canjeó la clave de activación (v3) |
 | `status` | TEXT | `created · starting · qr · pairing · connecting · open · closed · error · loggedOut` |
 | `wa_jid` | TEXT | jid real asignado por WhatsApp tras vincular |
@@ -246,8 +246,9 @@ Sobreviven a un reinicio (están en disco) y se purgan cada minuto.
 | `used_at` | INTEGER | Cuándo se canjeó en el panel |
 | `used_by_instance` | TEXT | Sub-bot que quedó activado con ella |
 
-Una clave es de **un solo uso**: la genera `.key` en WhatsApp y la canjea el panel web
-(`POST /api/instances/:id/activate`) para marcar el bot como `activated`.
+Tabla histórica conservada por compatibilidad. Desde v4 no se generan ni se exigen
+claves de activación. `POST /api/instances/:id/activate` acepta peticiones sin clave;
+`.key` es un alias opcional de `.pairing`. La vinculación de WhatsApp sigue siendo necesaria.
 
 ---
 

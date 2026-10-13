@@ -127,7 +127,7 @@ async function main() {
   );
   check('OWNER_NUMBERS configurado', env.ownerNumbers.length > 0, env.ownerNumbers.length ? `${env.ownerNumbers.length} número(s) owner` : 'sin owner: nadie tendrá rango máximo');
   check('prefijo', Boolean(IDENTITY.prefix), `por defecto "${IDENTITY.prefix}" (cada bot elige: # - + . /)`);
-  check('acceso del panel', true, 'abierto (sin contraseña) · bots se activan con la clave de .key');
+  check('acceso del panel', true, 'abierto (sin contraseña) · bots listos al vincular WhatsApp');
   check('puerto del panel', env.webPort > 0, `${env.webHost}:${env.webPort}`);
   check('máximo de sub-bots', env.maxInstances >= 1 && env.maxInstances <= 3, String(env.maxInstances));
 
