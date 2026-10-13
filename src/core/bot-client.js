@@ -30,7 +30,7 @@ import { env } from '../config/env.js';
 import { IDENTITY } from '../config/identity.js';
 import { baileysLogger, scoped } from './logger.js';
 import { createContext } from './context.js';
-import { handleCommandMessage } from './router.js';
+import { handleCommandMessage, parseCommand } from './router.js';
 import * as events from './events.js';
 import { instancesRepo, statsRepo } from '../db/index.js';
 import { normalizeJid, isGroupJid } from '../utils/ids.js';
@@ -94,6 +94,8 @@ export class BotClient extends EventEmitter {
 
     this._sendQueue = Promise.resolve();
     this._metadataCache = new Map();
+    // También deduplica notify/append y los ecos de nuestros propios envíos.
+    this._seenMessages = new Map();
     this._logger = baileysLogger(`wa:${this.id}`);
   }
 
@@ -186,7 +188,7 @@ export class BotClient extends EventEmitter {
       emitOwnEvents: false,
       shouldSyncHistoryMessage: () => false,
       shouldIgnoreJid: (jid) => isJidBroadcast(jid) || isJidStatusBroadcast(jid) || isJidNewsletter(jid),
-      cachedGroupMetadata: async (jid) => this._metadataCache.get(jid) ?? undefined,
+      cachedGroupMetadata: async (jid) => this.cachedGroupMetadata(jid),
       getMessage: async () => undefined,
       options: {},
     });
@@ -321,6 +323,7 @@ export class BotClient extends EventEmitter {
     });
 
     sock.ev.on('group-participants.update', async (event) => {
+      this._metadataCache.delete(normalizeJid(event.id));
       try {
         await events.onParticipantsUpdate({ client: this, instance: this.instance, event });
       } catch (error) {
@@ -329,6 +332,7 @@ export class BotClient extends EventEmitter {
     });
 
     sock.ev.on('groups.update', async (updates) => {
+      for (const update of updates ?? []) this._metadataCache.delete(normalizeJid(update.id));
       try {
         await events.onGroupUpdate({ client: this, instance: this.instance, updates });
       } catch (error) {
@@ -354,17 +358,46 @@ export class BotClient extends EventEmitter {
 
   async _handleMessage(raw, type) {
     if (!raw?.message) return;
-    if (raw.key?.fromMe) return;
-    if (raw.key?.remoteJid === 'status@broadcast') return;
-    if (type === 'append') return; // mensajes de histórico, no se procesan
+    const chat = raw.key?.remoteJid;
+    if (!chat || isJidBroadcast(chat) || isJidStatusBroadcast(chat) || isJidNewsletter(chat)) return;
+    if (type !== 'notify' && type !== 'append') return;
+
+    // Baileys también usa append para mensajes recibidos estando offline.
+    // Aceptar solo los recientes evita ejecutar comandos viejos al reconectar.
+    if (type === 'append') {
+      const timestamp = Number(raw.messageTimestamp) * 1000;
+      const age = Date.now() - timestamp;
+      if (!Number.isFinite(timestamp) || age < -30_000 || age > 120_000) return;
+    }
+    if (!this._rememberMessage(raw.key)) return;
 
     statsRepo.bump('messages');
 
     const ctx = await createContext({ raw, instance: this.instance, client: this });
 
     // (el filtro de grupo cerrado vive en el router: único punto de control)
+    // El teléfono vinculado también puede dar comandos. Sus mensajes normales
+    // (incluidas las respuestas del bot) no deben disparar eventos ni bucles.
+    if (ctx.fromMe && !parseCommand(ctx.text, ctx)) return;
     const wasCommand = await handleCommandMessage(ctx);
-    if (!wasCommand) await events.onMessage(ctx);
+    if (!wasCommand && !ctx.fromMe) await events.onMessage(ctx);
+  }
+
+  /** Reserva el id ANTES del primer await: dos upserts concurrentes no se repiten. */
+  _rememberMessage(key) {
+    if (!key?.id) return true;
+    const now = Date.now();
+    for (const [id, at] of this._seenMessages) {
+      if (now - at < 10 * 60_000) break;
+      this._seenMessages.delete(id);
+    }
+    const id = JSON.stringify([key.remoteJid, Boolean(key.fromMe), key.id]);
+    if (this._seenMessages.has(id)) return false;
+    this._seenMessages.set(id, now);
+    if (this._seenMessages.size > 2000) {
+      this._seenMessages.delete(this._seenMessages.keys().next().value);
+    }
+    return true;
   }
 
   /* ── API usada por el resto del bot ─────────────────────────── */
@@ -386,6 +419,7 @@ export class BotClient extends EventEmitter {
       const sent = options?.quoted
         ? await this.sock.sendMessage(normalizeJid(jid), content, { quoted: options.quoted })
         : await this.sock.sendMessage(normalizeJid(jid), content);
+      if (sent?.key) this._rememberMessage({ ...sent.key, fromMe: true });
       await sleep(350); // separación entre envíos: evita rate limits de WhatsApp
       return sent ?? null;
     } catch (error) {
@@ -400,10 +434,16 @@ export class BotClient extends EventEmitter {
     }
   }
 
+  /** Baileys espera GroupMetadata, NO el contenedor interno { at, data }. */
+  cachedGroupMetadata(jid) {
+    const cached = this._metadataCache.get(normalizeJid(jid));
+    return cached && Date.now() - cached.at < 60_000 ? cached.data : undefined;
+  }
+
   async groupMetadata(jid) {
     const key = normalizeJid(jid);
-    const cached = this._metadataCache.get(key);
-    if (cached && Date.now() - cached.at < 60_000) return cached.data;
+    const cached = this.cachedGroupMetadata(key);
+    if (cached) return cached;
     const data = await this.sock.groupMetadata(key);
     this._metadataCache.set(key, { at: Date.now(), data });
     return data;

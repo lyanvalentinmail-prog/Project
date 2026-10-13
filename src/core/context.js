@@ -20,9 +20,14 @@ import { renderResult, setRenderPrefix } from '../design/index.js';
 export function unwrapMessage(rawMessage) {
   let m = rawMessage?.message;
   if (!m) return null;
-  if (m.ephemeralMessage?.message) m = m.ephemeralMessage.message;
-  if (m.viewOnceMessage?.message) m = m.viewOnceMessage.message;
-  if (m.viewOnceMessageV2?.message) m = m.viewOnceMessageV2.message;
+  // Pueden venir anidados en distinto orden (documentos con caption incluidos).
+  for (let depth = 0; depth < 10; depth += 1) {
+    const inner = m.ephemeralMessage?.message ?? m.viewOnceMessage?.message ??
+      m.viewOnceMessageV2?.message ?? m.viewOnceMessageV2Extension?.message ??
+      m.documentWithCaptionMessage?.message;
+    if (!inner) break;
+    m = inner;
+  }
   return m ?? null;
 }
 
@@ -92,9 +97,11 @@ export async function createContext({ raw, instance, client }) {
   const m = unwrapMessage(raw);
   const chatJid = normalizeJid(raw.key?.remoteJid);
   const isGroup = isGroupJid(chatJid);
-  const authorJid = normalizeJid(isGroup ? raw.participant ?? raw.key?.participant : chatJid);
-  const messageId = raw.key?.id ?? null;
   const fromMe = Boolean(raw.key?.fromMe);
+  const authorJid = normalizeJid(fromMe
+    ? client.jid
+    : isGroup ? raw.key?.participant ?? raw.participant : chatJid);
+  const messageId = raw.key?.id ?? null;
 
   // fila fresca de la instancia: el panel puede activarla/cambiar su
   // prefijo mientras el bot está conectado y el contexto lo refleja
@@ -130,6 +137,7 @@ export async function createContext({ raw, instance, client }) {
     raw,
     message: m,
     messageId,
+    chatJid,
     text,
     isGroup,
     isPrivate: !isGroup,
@@ -170,7 +178,7 @@ export async function createContext({ raw, instance, client }) {
 
 /** Resuelve el destino simbólico ('group' | 'author' | 'reply' | jid). */
 export function resolveTarget(ctx, to) {
-  if (!to || to === 'reply' || to === 'group') return ctx.group?.groupId ?? ctx.author.jid;
+  if (!to || to === 'reply' || to === 'group') return ctx.chatJid ?? ctx.group?.groupId ?? ctx.author.jid;
   if (to === 'author') return ctx.author.jid;
   if (to === 'private') return ctx.author.jid;
   return normalizeJid(to);

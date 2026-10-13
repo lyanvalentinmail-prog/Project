@@ -11,7 +11,7 @@
 
 [![Node](https://img.shields.io/badge/node-%E2%89%A522-8fbc72)](https://nodejs.org)
 [![Baileys](https://img.shields.io/badge/baileys-7.0.0--rc14-c8a27a)](https://github.com/WhiskeySockets/Baileys)
-[![tests](https://img.shields.io/badge/tests-154%20pass-8fbc72)](#pruebas)
+[![tests](https://img.shields.io/badge/tests-179%20pass-8fbc72)](#pruebas)
 [![version](https://img.shields.io/badge/versi%C3%B3n-1.0-e8c9a0)](#)
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/lyanvalentinmail-prog/Project)
 
@@ -94,6 +94,11 @@ Panel web      ⁙ http://localhost:3000
 5. Cuando el estado pase a **en línea**, añade el bot a tu grupo de rol y escribe
    `«prefijo»menu` (ej. `.menu` o `#menu` según el prefijo elegido).
 
+Puedes enviar comandos desde otro número **o desde el propio teléfono vinculado**.
+En privado, prueba `«prefijo»ping` o `«prefijo»menu`; registro, roles y moderación
+se usan dentro del grupo. Tras actualizar el código, reinicia el proceso del bot
+para cargar los cambios (no hace falta borrar la sesión ni volver a vincular).
+
 Los bots antiguos también quedan habilitados al actualizar. Se conserva su configuración
 de inicio automático; los bots detenidos no se arrancan por la migración.
 
@@ -155,7 +160,7 @@ src/
 web/                      panel: servidor Express, API REST, SSE, auth y frontend
 tools/simulator.js        banco de pruebas de comandos en terminal (NO es el bot real)
 scripts/                  doctor, inspección y reinicio de la base de datos
-tests/                    154 pruebas con node:test
+tests/                    179 pruebas con node:test
 docs/                     arquitectura, base de datos, comandos y limitaciones
 ```
 
@@ -172,7 +177,7 @@ Por eso se puede probar todo sin vincular un número.
 | `npm start` | Bot + panel web |
 | `npm run bot` | Solo el bot (sin panel) |
 | `npm run web` | Solo el panel web |
-| `npm test` | 154 pruebas (servicios, router, base de datos, API) |
+| `npm test` | 179 pruebas (servicios, router, base de datos, API) |
 | `npm run sim` | Simulador interactivo de comandos en terminal |
 | `npm run sim -- --demo` | Demo guiada con 81 escenarios reales |
 | `npm run doctor` | Diagnóstico: Node, dependencias, BD, carpetas, `.env`, conectividad |
@@ -200,7 +205,7 @@ herramienta de pruebas y jamás se hace pasar por una conexión real.
 
 ```bash
 npm test
-# tests 154 · pass 154 · fail 0 · ~3 s
+# tests 179 · pass 179 · fail 0
 ```
 
 Cubren: registro y duplicados, aprobación por respuesta/folio/nombre, resolución atómica
@@ -210,6 +215,10 @@ warns con expulsión automática, expulsión/ban con confirmación, re-expulsió
 cierre de grupo, aislamiento entre grupos, enmascarado de números en todas las salidas,
 rate-limit, expiración de confirmaciones, robustez ante errores de envío, las 71 plantillas
 de diseño y la API web completa (auth, sub-bots, grupos, solicitudes, SSE, estáticos).
+También se prueba el adaptador `messages.upsert`: comandos propios y de terceros,
+chats privados, mensajes offline recientes, deduplicación, ecos del bot, mensajes
+encapsulados y caché de metadatos. El socket se sustituye en las pruebas: no requieren
+credenciales ni verifican una conexión real con WhatsApp.
 
 ---
 
