@@ -66,6 +66,12 @@ const desktopItems = [
 const state = {
   view: routeFromPath(),
   apiUser: safeRead('sw_user'),
+  /** Revisión del servidor: si no cambia, no se repinta nada. */
+  revision: '',
+  stream: { source: null, connected: false, since: null },
+  pairing: { id: null, code: '', formatted: '', expiresInSec: null, issuedAt: null, loading: false, error: '', lastRequestAt: 0 },
+  confirm: null,
+  loading: true,
   me: null,
   health: null,
   stats: null,
@@ -106,12 +112,111 @@ const state = {
     linkData: null,
     loading: false,
     error: '',
-    poller: null,
     connectKey: '',
     connectError: '',
     connectLoading: false,
   },
 };
+
+/* ── motor de render ─────────────────────────────────────────────
+ * Reglas para que la web NO parezca recargarse sola:
+ *   · se construye el HTML y se compara con el último pintado;
+ *     si es idéntico, el DOM no se toca (cero parpadeos);
+ *   · los repintados se agrupan (throttle) para evitar tormentas;
+ *   · nunca se repinta encima de un campo que el usuario está
+ *     escribiendo y se restaura el foco/caret después de cada pintado.
+ */
+const paint = {
+  last: { header: null, nav: null, main: null },
+  timer: null,
+  lastAt: 0,
+  minIntervalMs: 300,
+  counts: { renders: 0, skipped: 0 },
+};
+
+function buildHtml(renderFn) {
+  const holder = document.createElement('div');
+  renderFn(holder);
+  return { html: holder.innerHTML, className: holder.className };
+}
+
+function activeField() {
+  const el = document.activeElement;
+  if (!el) return null;
+  const tag = el.tagName;
+  const editable = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+  return editable && !el.disabled ? el : null;
+}
+
+function focusSnapshot() {
+  const el = activeField();
+  if (!el) return null;
+  return {
+    id: el.id || null,
+    name: el.getAttribute?.('name') ?? null,
+    flow: el.dataset?.flow ?? null,
+    start: typeof el.selectionStart === 'number' ? el.selectionStart : null,
+    end: typeof el.selectionEnd === 'number' ? el.selectionEnd : null,
+    scrollTop: typeof el.scrollTop === 'number' ? el.scrollTop : null,
+  };
+}
+
+function focusRestore(snapshot) {
+  if (!snapshot) return;
+  let el = snapshot.id ? document.getElementById(snapshot.id) : null;
+  if (!el && snapshot.flow) el = document.querySelector(`[data-flow="${snapshot.flow}"]`);
+  if (!el && snapshot.name) el = document.querySelector(`[name="${CSS.escape(snapshot.name)}"]`);
+  if (!el || typeof el.focus !== 'function') return;
+  try {
+    el.focus({ preventScroll: true });
+    if (snapshot.start != null && typeof el.setSelectionRange === 'function') {
+      el.setSelectionRange(snapshot.start, snapshot.end ?? snapshot.start);
+    }
+    if (snapshot.scrollTop != null) el.scrollTop = snapshot.scrollTop;
+  } catch { /* campo sin selección */ }
+}
+
+function applyRegion(selector, key, html, className = null, { force = false } = {}) {
+  const el = document.querySelector(selector);
+  if (!el) return false;
+  if (className != null && el.className !== className) el.className = className;
+  if (!force && paint.last[key] === html) return false;
+  paint.last[key] = html;
+  el.innerHTML = html;
+  return true;
+}
+
+/** Repinta como máximo una vez cada `minIntervalMs`, agrupando avisos. */
+function scheduleRender() {
+  if (paint.timer) return;
+  const wait = Math.max(0, paint.minIntervalMs - (Date.now() - paint.lastAt));
+  paint.timer = setTimeout(() => {
+    paint.timer = null;
+    renderPage();
+  }, wait);
+}
+
+function afterRender({ touched = false } = {}) {
+  applyThemeClass();
+  updateLiveChip();
+  updatePairingCountdown();
+  if (touched && (state.view === 'endpoints' || state.view === 'favorites')) renderEndpointResults();
+  if (state.modalMode === 'connect') paintConnectModal();
+}
+
+function applyThemeClass() {
+  document.body.classList.toggle('light-theme', state.theme === 'light');
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', state.theme === 'light' ? '#f7f5fb' : '#050506');
+}
+
+function updateLiveChip() {
+  const chip = document.getElementById('live-chip');
+  if (!chip) return;
+  const live = state.stream.connected;
+  chip.className = `live-chip ${live ? 'is-live' : 'is-off'}`;
+  chip.querySelector('span:last-child').textContent = live ? 'En vivo' : 'Reconectando…';
+}
 
 function routeFromPath() {
   const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
@@ -159,9 +264,7 @@ function brandMarkup() {
   return `<span class="brand-mark" aria-hidden="true"><span class="brand-glyph">✦</span></span><span class="brand-copy"><span class="brand-name">Stellar<em>WA</em></span><span class="brand-tagline">Plataforma oficial</span></span>`;
 }
 
-function renderHeader() {
-  const header = $('#site-header');
-  if (!header) return;
+function renderHeaderInto(header) {
   if (state.view === 'landing') {
     header.className = 'site-header landing-header';
     header.innerHTML = `
@@ -172,10 +275,13 @@ function renderHeader() {
         <a class="header-link" href="#faq">Preguntas frecuentes</a>
       </nav>
       <div class="header-actions">
-        <span class="service-pill"><span class="pulse-dot"></span><span id="header-service-copy">${state.health?.ok === false ? 'Verificando servicios' : 'Servicio operativo'}</span></span>
+        <span class="live-chip" id="live-chip" role="status" aria-live="polite"><span class="dot"></span><span>En vivo</span></span>
         <button class="icon-button" type="button" data-action="toggle-theme" aria-label="Cambiar tema">${icon(state.theme === 'light' ? 'sun' : 'moon')}</button>
         <a class="btn btn-primary btn-small header-panel-link" href="/home" data-page="home">Ir al Panel ${icon('arrow-right')}</a>
-        <button class="icon-button mobile-menu-toggle" type="button" data-action="toggle-landing-menu" aria-label="Abrir navegación">${icon('menu')}</button>
+        <label class="uhamburger mobile-menu-toggle" title="Abrir navegación">
+          <input type="checkbox" id="landing-menu-check" data-action="toggle-landing-menu" aria-label="Abrir navegación" />
+          <span class="toggle"><span class="bars" id="bar1"></span><span class="bars" id="bar2"></span><span class="bars" id="bar3"></span></span>
+        </label>
       </div>`;
     return;
   }
@@ -188,6 +294,7 @@ function renderHeader() {
       ${desktopItems.map((item) => `<a class="header-link ${activeView === item.view ? 'is-active' : ''}" href="${paths[item.view]}" data-page="${item.view}">${icon(item.icon)}<span>${item.label}</span></a>`).join('')}
     </nav>
     <div class="header-actions">
+      <span class="live-chip" id="live-chip" role="status" aria-live="polite"><span class="dot"></span><span>En vivo</span></span>
       <button class="icon-button" type="button" data-action="toggle-theme" aria-label="Cambiar tema">${icon(state.theme === 'light' ? 'sun' : 'moon')}</button>
       <button class="icon-button notification-button" type="button" data-action="notifications" aria-label="Notificaciones">${icon('bell')}</button>
       <button class="profile-button" type="button" data-action="open-drawer" aria-label="Abrir menú de usuario">
@@ -196,19 +303,17 @@ function renderHeader() {
     </div>`;
 }
 
-function renderBottomNavigation() {
-  const nav = $('#bottom-navigation');
-  if (!nav) return;
-  if (state.view === 'landing') {
-    nav.hidden = true;
-    nav.innerHTML = '';
-    return;
-  }
-  nav.hidden = false;
-  nav.innerHTML = navItems.map((item) => {
+function buildHeader() {
+  return buildHtml(renderHeaderInto);
+}
+
+function buildBottomNav() {
+  if (state.view === 'landing') return { hidden: true, html: '' };
+  const html = navItems.map((item) => {
     const active = item.view === 'menu' ? false : (item.view === state.view || (state.view === 'favorites' && item.view === 'endpoints'));
     return `<button class="bottom-nav-item ${active ? 'is-active' : ''}" type="button" data-${item.view === 'menu' ? 'action="open-drawer"' : `page="${item.view}"`} aria-label="${item.label}">${icon(item.icon)}<span>${item.label}</span></button>`;
   }).join('');
+  return { hidden: false, html };
 }
 
 function pageFooter() {
@@ -218,7 +323,6 @@ function pageFooter() {
 /* ── landing (valores reales del servidor) ───────────────────── */
 
 function renderLanding() {
-  const host = $('#main-content');
   const totalBots = state.stats?.instances ?? state.instances.length ?? 0;
   const connected = state.stats?.connected ?? state.instances.filter((i) => i.status === 'open').length;
   const commands = state.health?.commands ?? 0;
@@ -234,7 +338,7 @@ function renderLanding() {
     { q: '¿Puedo usar el mismo número en varios bots?', a: 'No. Cada número puede estar vinculado a un solo SubBot a la vez. Podés desvincularlo desde el panel si es necesario.' },
     { q: '¿Cuántos bots puedo crear?', a: `Hasta ${state.me?.limits?.maxInstances ?? 3} sub-bots con números distintos, cada uno con su propio prefijo y sus propios datos en la base de datos.` },
   ].map((item, index) => `<details class="faq-item" ${index === 0 ? 'open' : ''}><summary><span><span class="purple mono">${String(index + 1).padStart(2, '0')}</span>　${escapeHtml(item.q)}</span></summary><div class="faq-answer">${escapeHtml(item.a)}</div></details>`).join('');
-  host.innerHTML = `
+  return `
     <div class="page-content landing-page" id="top">
       <section class="landing-hero" aria-labelledby="landing-title">
         <div class="landing-hero-copy">
@@ -328,9 +432,9 @@ function renderHome() {
 
     <section class="section-block" style="margin-top:34px"><div class="section-heading"><div><span class="section-kicker">${icon('chart')} Resumen</span><h2 class="section-title">Tu plataforma, de un vistazo</h2><p class="section-copy">Datos reales de la base de datos y de tus sesiones.</p></div><button class="btn btn-outline btn-small" type="button" data-action="refresh-data">${icon('link')} Actualizar datos</button></div><div class="metrics-grid">${counts.map(renderMetricCard).join('')}</div></section>
 
-    <section class="section-block"><div class="section-heading"><div><span class="section-kicker">${icon('bolt')} Accesos rápidos</span><h2 class="section-title">¿Qué quieres hacer?</h2></div></div><div class="shortcut-grid"><a class="card card-hover shortcut-card" href="/register" data-page="register"><span class="shortcut-icon">${icon('plus')}</span><span><strong>Crear un bot</strong><small>Número, prefijo y activación con .key</small></span><span class="shortcut-arrow">${icon('arrow-right')}</span></a><a class="card card-hover shortcut-card" href="/cmds" data-page="commands"><span class="shortcut-icon">${icon('code')}</span><span><strong>Comandos</strong><small>Referencia completa del bot</small></span><span class="shortcut-arrow">${icon('arrow-right')}</span></a></div></section>
+    <section class="section-block"><div class="section-heading"><div><span class="section-kicker">${icon('bolt')} Accesos rápidos</span><h2 class="section-title">¿Qué quieres hacer?</h2></div></div><div class="shortcut-grid"><a class="card card-hover shortcut-card uv-card" href="/register" data-page="register"><span class="shortcut-icon">${icon('plus')}</span><span><strong>Crear un bot</strong><small>Número, prefijo y activación con .key</small></span><span class="shortcut-arrow">${icon('arrow-right')}</span></a><a class="card card-hover shortcut-card uv-card" href="/cmds" data-page="commands"><span class="shortcut-icon">${icon('code')}</span><span><strong>Comandos</strong><small>Referencia completa del bot</small></span><span class="shortcut-arrow">${icon('arrow-right')}</span></a></div></section>
 
-    <section class="section-block"><div class="section-heading"><div><span class="section-kicker">${icon('users')} Comunidad</span><h2 class="section-title">Siempre cerca</h2></div></div><div class="shortcut-grid"><a class="card card-hover shortcut-card" href="https://web.stellarwa.xyz/channel/api" target="_blank" rel="noreferrer"><span class="shortcut-icon">${icon('whatsapp')}</span><span><strong>Canal de WhatsApp</strong><small>Avisos sobre futuras actualizaciones</small></span><span class="shortcut-arrow">${icon('arrow-right')}</span></a><a class="card card-hover shortcut-card" href="/tickets" data-page="tickets"><span class="shortcut-icon">${icon('headset')}</span><span><strong>Abrir ticket</strong><small>Contactar soporte directo</small></span><span class="shortcut-arrow">${icon('arrow-right')}</span></a></div></section>
+    <section class="section-block"><div class="section-heading"><div><span class="section-kicker">${icon('users')} Comunidad</span><h2 class="section-title">Siempre cerca</h2></div></div><div class="shortcut-grid"><a class="card card-hover shortcut-card uv-card" href="https://web.stellarwa.xyz/channel/api" target="_blank" rel="noreferrer"><span class="shortcut-icon">${icon('whatsapp')}</span><span><strong>Canal de WhatsApp</strong><small>Avisos sobre futuras actualizaciones</small></span><span class="shortcut-arrow">${icon('arrow-right')}</span></a><a class="card card-hover shortcut-card uv-card" href="/tickets" data-page="tickets"><span class="shortcut-icon">${icon('headset')}</span><span><strong>Abrir ticket</strong><small>Contactar soporte directo</small></span><span class="shortcut-arrow">${icon('arrow-right')}</span></a></div></section>
     ${pageFooter()}
   </div>`;
 }
@@ -402,96 +506,286 @@ function renderWizard() {
   return `<div class="page-content"><div class="wizard-wrap">${progress}<section class="wizard-card wizard-step-${step}" aria-labelledby="wizard-title"><span class="wizard-step-label">${stepLabel}</span><h1 class="wizard-title" id="wizard-title">${escapeHtml(title)}</h1><p class="wizard-description">${escapeHtml(description)}</p>${content}${flowError}${actionButtons}</section><p class="wizard-footer-note">© 2026 <span class="purple">Stellar The Best's Corp.</span> All rights reserved.</p>${pageFooter()}</div></div>`;
 }
 
-/** Panel de conexión: activación con `.key` + QR/pairing REAL de WhatsApp. */
+/* ── pairing code REAL de WhatsApp ───────────────────────────────
+ * El código que se muestra viene de Baileys (WhatsApp). El bot lo
+ * entrega también por WhatsApp con `.key` / `.pairing`.
+ */
+
+const PAIRING_LIFETIME_SEC = 60;
+const pairingTicker = { timer: null };
+
+function rememberPairing({ id, formatted, issuedAt = Date.now(), lifetimeSec = PAIRING_LIFETIME_SEC, error = '' } = {}) {
+  state.pairing = {
+    ...state.pairing,
+    id: id ?? state.pairing.id,
+    formatted: formatted ?? '',
+    issuedAt: formatted ? issuedAt : null,
+    lifetimeSec,
+    error,
+    loading: false,
+  };
+  startPairingTicker();
+  updatePairingCountdown();
+}
+
+function pairingSecondsLeft() {
+  const { formatted, issuedAt, lifetimeSec = PAIRING_LIFETIME_SEC } = state.pairing;
+  if (!formatted || !issuedAt) return null;
+  return Math.max(0, Math.round(lifetimeSec - (Date.now() - issuedAt) / 1000));
+}
+
+function startPairingTicker() {
+  if (pairingTicker.timer) return;
+  // Un único temporizador que solo escribe texto: no repinta la página.
+  pairingTicker.timer = setInterval(() => {
+    if (!updatePairingCountdown()) {
+      clearInterval(pairingTicker.timer);
+      pairingTicker.timer = null;
+    }
+  }, 1000);
+}
+
+/** Actualiza el contador sin tocar nada más. Devuelve false si no hay qué animar. */
+function updatePairingCountdown() {
+  const nodes = document.querySelectorAll('[data-pairing-countdown]');
+  const left = pairingSecondsLeft();
+  if (!nodes.length) return false;
+  nodes.forEach((node) => {
+    if (left == null) { node.textContent = ''; return; }
+    node.textContent = left > 0 ? `caduca en ${left}s` : 'expirado · pide otro';
+    const card = node.closest('[data-pairing-card]');
+    if (card) card.style.setProperty('--pairing-progress', `${Math.max(0, Math.min(100, (left / PAIRING_LIFETIME_SEC) * 100))}%`);
+  });
+  if (left === 0 && state.pairing.autoRefresh !== false) maybeAutoRefreshPairing();
+  return left == null ? false : true;
+}
+
+/** Si el código caducó y la sesión sigue vinculándose, pide otro (con enfriamiento). */
+function maybeAutoRefreshPairing() {
+  const id = state.pairing.id;
+  if (!id || state.pairing.loading) return;
+  if (Date.now() - state.pairing.lastRequestAt < 8000) return;
+  const instance = state.instances.find((item) => item.id === id) ?? state.connectTarget;
+  if (!instance || instance.status === 'open') return;
+  requestPairing(id, { silent: true });
+}
+
+function pairingCard({ id, mode = 'pairing', connected = false, activated = false, context = 'modal' }) {
+  const pairing = state.pairing.id === id ? state.pairing : { ...state.pairing, id, formatted: '', issuedAt: null, error: '' };
+  const left = state.pairing.id === id ? pairingSecondsLeft() : null;
+  const isQr = mode === 'qr';
+
+  if (connected) {
+    return `<div class="pairing-card" data-pairing-card><div class="pairing-card-head"><div><h3>${icon('check')} Sesión vinculada</h3><small>Este sub-bot ya está conectado a WhatsApp.</small></div></div>${activated ? '<p class="pairing-wa-note">Activado con la clave de <b>.key</b>: ya puede usar todos sus comandos.</p>' : `<p class="pairing-wa-note">Falta activarlo: escribe <code>.key</code> desde WhatsApp y pega la clave aquí abajo.</p>`}</div>`;
+  }
+
+  return `<div class="pairing-card" data-pairing-card>
+    <div class="pairing-card-head">
+      <div>
+        <h3>${icon(isQr ? 'qr' : 'hash')} ${isQr ? 'Código QR de WhatsApp' : 'Pairing code real de WhatsApp'}</h3>
+        <small>${isQr ? 'Escanea desde el teléfono del bot.' : 'Escribe este código en el teléfono del bot.'}</small>
+      </div>
+      <span class="status-badge ${pairing.formatted ? 'status-online' : 'status-offline'}"><i class="pulse-dot"></i>${pairing.formatted ? 'Código activo' : 'Sin código'}</span>
+    </div>
+    ${isQr
+      ? `<div class="pairing-empty">El QR aparece aquí en cuanto WhatsApp lo emite (se renueva solo cada ~${state.me?.qrExpiresInSec ?? 20}s).</div>`
+      : pairing.formatted
+        ? `<div class="pairing-code-row"><span class="pairing-code" data-pairing-code>${escapeHtml(pairing.formatted)}</span><button class="glow-btn glow-btn-soft" type="button" data-action="copy-pairing">${icon('copy')} Copiar código</button></div>
+           <div class="pairing-progress"><span class="track"><span class="fill"></span></span><span data-pairing-countdown>${left != null && left > 0 ? `caduca en ${left}s` : 'expirado · pide otro'}</span></div>`
+        : `<div class="pairing-empty">${pairing.error ? escapeHtml(pairing.error) : 'Pulsa <b>Pedir pairing code</b> y WhatsApp emitirá el código real para este número.'}</div>`}
+    <ol class="pairing-steps">
+      <li><b>1.</b><span>Abre WhatsApp en el teléfono de <b>${escapeHtml(state.instances.find((i) => i.id === id)?.phoneMasked || 'ese número')}</b>.</span></li>
+      <li><b>2.</b><span>Ajustes → <b>Dispositivos vinculados</b> → <b>Vincular un dispositivo</b>${isQr ? '' : ' → <b>Vincular con el número de teléfono</b>'}.</span></li>
+      <li><b>3.</b><span>${isQr ? 'Escanea el código.' : 'Escribe el pairing code tal cual (ej. <b>ABCD-1234</b>).'}</span></li>
+    </ol>
+    ${isQr ? '' : `<div class="pairing-wa-note">${icon('whatsapp')} También puedes pedir el código desde WhatsApp: envía <code>.key</code> (o <code>.pairing</code>) a cualquier bot conectado y te devuelve este mismo código.</div>`}
+    <div class="pairing-actions">
+      ${isQr
+        ? `<button class="glow-btn glow-btn-soft" type="button" data-action="${context === 'wizard' ? 'refresh-link' : 'refresh-connect-link'}" ${context === 'wizard' ? flow_loading_guard() : ''}>${icon('refresh')} Renovar QR</button>`
+        : `<button class="glow-btn glow-btn-soft" type="button" data-action="request-pairing" data-id="${escapeHtml(id)}" ${pairing.loading ? 'disabled' : ''}>${pairing.loading ? 'Pidiendo a WhatsApp…' : `${icon('key')} ${pairing.formatted ? 'Pedir código nuevo' : 'Pedir pairing code'}`}</button>`}
+      <button class="btn btn-outline btn-small" type="button" data-action="check-link" data-id="${escapeHtml(id)}">${icon('check')} Comprobar vinculación</button>
+    </div>
+  </div>`;
+}
+
+function flow_loading_guard() { return state.flow.loading ? 'disabled' : ''; }
+
+/** Pide a WhatsApp el pairing code REAL del sub-bot. */
+async function requestPairing(id, { silent = false } = {}) {
+  if (!id) return;
+  state.pairing = { ...state.pairing, id, loading: true, error: '', lastRequestAt: Date.now() };
+  if (!silent) { scheduleRender(); paintConnectModal(); }
+  try {
+    const data = await request(`/instances/${encodeURIComponent(id)}/pairing`, { method: 'POST', body: { waitMs: 15000 } });
+    rememberPairing({ id, formatted: data.formatted || '', issuedAt: data.issuedAt ?? Date.now(), lifetimeSec: data.expiresInSec ? data.expiresInSec + (data.ageSec ?? 0) : PAIRING_LIFETIME_SEC });
+    if (!silent) showToast('Pairing code real emitido por WhatsApp', 'success');
+    else showToast('Pairing code renovado automáticamente', 'info');
+  } catch (error) {
+    state.pairing = { ...state.pairing, loading: false, error: error.message || 'No se pudo obtener el pairing code.' };
+    if (!silent) showToast(state.pairing.error, 'error');
+  } finally {
+    scheduleRender();
+    paintConnectModal();
+  }
+}
+
+/** Panel de conexión del asistente: activación con `.key` + vinculación real. */
 function renderConnectStep() {
   const flow = state.flow;
   const link = flow.linkData ?? {};
   const target = state.instances.find((item) => item.id === flow.instanceId) ?? {};
   const activated = Boolean(target.activated ?? link.activated);
   const connected = ['open', 'connected'].includes(String(link.status || '').toLowerCase());
-  const qrTtl = link.qrExpiresInSec ?? state.me?.qrExpiresInSec ?? 60;
-  return `<div class="page-content"><div class="wizard-wrap"><section class="wizard-card wizard-step-5" aria-labelledby="wizard-title"><span class="wizard-step-label">CONECTAR EN WHATSAPP</span><h1 class="wizard-title" id="wizard-title">Conecta tu bot</h1><p class="wizard-description">${escapeHtml(flow.name || target.name || 'Tu bot')} fue creado <strong>desconectado</strong>. Actívalo con <code>.key</code> y vincúlalo con WhatsApp.</p>
+  const prefix = escapeHtml(target.prefix || flow.prefix || '.');
+  return `<div class="page-content"><div class="wizard-wrap"><section class="wizard-card wizard-step-5" aria-labelledby="wizard-title">
+    <span class="wizard-step-label">CONECTAR EN WHATSAPP</span>
+    <h1 class="wizard-title" id="wizard-title">Conecta tu bot</h1>
+    <p class="wizard-description">${escapeHtml(flow.name || target.name || 'Tu bot')} nació <strong>desconectado</strong>. Actívalo con <code>.key</code> y vincúlalo con WhatsApp.</p>
 
-    <div class="bots-summary" style="margin:14px 0"><article class="card summary-tile"><span>Activado</span><strong class="${activated ? 'green' : ''}">${activated ? 'Sí' : 'No'}</strong></article><article class="card summary-tile"><span>Vinculado</span><strong class="${connected ? 'green' : ''}">${connected ? 'Sí' : 'No'}</strong></article><article class="card summary-tile"><span>Prefijo</span><strong class="mono">${escapeHtml(target.prefix || flow.prefix || '.')}</strong></article></div>
+    <div class="bots-summary" style="margin:14px 0">
+      <article class="card summary-tile"><span>Activado</span><strong class="${activated ? 'green' : ''}">${activated ? 'Sí' : 'No'}</strong></article>
+      <article class="card summary-tile"><span>Vinculado</span><strong class="${connected ? 'green' : ''}">${connected ? 'Sí' : 'No'}</strong></article>
+      <article class="card summary-tile"><span>Prefijo</span><strong class="mono">${prefix}</strong></article>
+    </div>
 
-    <div class="callout">${icon('shield')}<span><strong>Paso 1 · Pide tu clave en WhatsApp</strong><br />Escribe <code>.key</code> desde WhatsApp a este bot (o a cualquier bot conectado de la plataforma). El bot te responderá con una clave de un solo uso. También funciona con # - + . /</span></div>
+    ${flow.loading ? `<div class="pairing-stage"><div class="atom-loader"><div class="react-star"><div class="nucleus"></div><div class="electron electron-1"></div><div class="electron electron-2"></div><div class="electron electron-3"></div></div></div><p>Pidiendo a WhatsApp el código real de vinculación…</p></div>` : ''}
 
-    <form class="wizard-form" id="activate-key-form" data-id="${escapeHtml(flow.instanceId || '')}"><label class="field"><span class="field-label">Clave de activación</span><input class="text-input mono" type="text" name="activation-key" value="${escapeHtml(flow.connectKey || '')}" placeholder="ABCD-2345" autocomplete="off" maxlength="20" /><span class="field-hint">Paso 2 · Pega aquí la clave que te dio el bot para activarlo.</span></label><button class="btn btn-primary btn-full" type="submit" ${flow.connectLoading ? 'disabled' : ''}>${icon('check')} Activar bot</button></form>
+    ${!flow.loading ? pairingCard({ id: flow.instanceId, mode: flow.pairingMode, connected, activated, context: 'wizard' }) : ''}
+    ${!flow.loading && flow.pairingMode === 'qr' && link.qrDataUrl ? `<div class="qr-frame"><img src="${escapeHtml(link.qrDataUrl)}" alt="Código QR real de WhatsApp para vincular el bot" /></div><span class="expiry-label">QR real de WhatsApp · se renueva cada ~${state.me?.qrExpiresInSec ?? 20}s</span>` : ''}
+
+    <div class="callout" style="margin-top:18px">${icon('shield')}<span><strong>Paso final · Pide tu clave desde WhatsApp</strong><br />Escribe <code>.key</code> desde WhatsApp a cualquier bot conectado (o al tuyo si ya está en línea). El bot te devolverá la clave de activación y el pairing code real.</span></div>
+
+    <form class="wizard-form" id="activate-key-form" data-id="${escapeHtml(flow.instanceId || '')}">
+      <label class="field"><span class="field-label">Clave de activación</span><input class="text-input mono" type="text" name="activation-key" value="${escapeHtml(flow.connectKey || '')}" placeholder="ABCD-2345" autocomplete="off" maxlength="20" /><span class="field-hint">Pega aquí la clave que te dio el bot con <code>.key</code>.</span></label>
+      <button class="btn btn-primary btn-full" type="submit" ${flow.connectLoading ? 'disabled' : ''}>${icon('check')} Activar bot</button>
+    </form>
     ${flow.connectError ? `<p class="link-error" role="alert">${escapeHtml(flow.connectError)}</p>` : ''}
+    ${link.lastError ? `<p class="link-error" role="alert">${escapeHtml(link.lastError)}</p>` : ''}
 
-    <div class="callout" style="margin-top:18px">${icon('link')}<span><strong>Paso 3 · Vincula con WhatsApp</strong><br />${flow.pairingMode === 'qr' ? 'Escanea el QR desde el teléfono del bot: WhatsApp → Ajustes → Dispositivos vinculados → Vincular un dispositivo.' : 'En el teléfono del bot: WhatsApp → Ajustes → Dispositivos vinculados → Vincular con el número de teléfono.'}</span></div>
-
-    ${flow.loading ? `<div class="loading-panel"><span class="loading-spinner"></span><span>Generando vinculación real…</span></div>` : ''}
-    ${!flow.loading && flow.pairingMode === 'qr' && link.qrDataUrl ? `<div class="qr-frame"><img src="${escapeHtml(link.qrDataUrl)}" alt="Código QR real de WhatsApp para vincular el bot" /></div><span class="expiry-label">QR real de WhatsApp · se renueva cada ${qrTtl}s</span>` : ''}
-    ${!flow.loading && flow.pairingMode !== 'qr' && (link.pairingFormatted || link.pairingCode) ? `<div class="qr-frame" style="display:flex;align-items:center;justify-content:center"><strong class="mono" style="font-size:30px;letter-spacing:6px">${escapeHtml(String(link.pairingFormatted || link.pairingCode))}</strong></div><span class="expiry-label">Pairing code real de WhatsApp · caduca en ~60s</span>` : ''}
-    ${!flow.loading && !link.qrDataUrl && !(link.pairingFormatted || link.pairingCode) ? `<div class="callout">${icon('bulb')}<span>${connected ? 'Ya está vinculado con WhatsApp.' : 'Pulsa Generar para pedir a WhatsApp el QR o el código de vinculación.'}</span></div>` : ''}
-
-    ${flow.connectError === '' && link.lastError ? `<p class="link-error" role="alert">${escapeHtml(link.lastError)}</p>` : ''}
-    <div class="wizard-actions"><button class="btn btn-outline" type="button" data-action="wizard-back">${icon('arrow-left')} Cambiar datos</button>${connected && activated ? `<button class="btn btn-primary" type="button" data-action="finish-flow">Finalizar ${icon('arrow-right')}</button>` : `<button class="btn btn-primary" type="button" data-action="refresh-link" ${flow.loading ? 'disabled' : ''}>${icon('link')} ${link.qrDataUrl || link.pairingCode ? 'Reintentar' : 'Generar vinculación'}</button>`}</div>
-    </section>${pageFooter()}</div></div>`;
+    <div class="wizard-actions">
+      <button class="btn btn-outline" type="button" data-action="wizard-back">${icon('arrow-left')} Cambiar datos</button>
+      ${connected && activated ? `<button class="btn btn-primary" type="button" data-action="finish-flow">Finalizar ${icon('arrow-right')}</button>` : `<button class="btn btn-outline" type="button" data-action="check-link" data-id="${escapeHtml(flow.instanceId || '')}">${icon('link')} Comprobar ahora</button>`}
+    </div>
+  </section>${pageFooter()}</div></div>`;
 }
 
 /* ── modal de conexión desde Mis Bots ────────────────────────── */
 
-function renderConnectModal() {
+function renderConnectModalInto(host) {
   const instance = state.connectTarget;
-  if (!instance) return;
+  if (!instance) { host.innerHTML = ''; return; }
   const link = instance.linkData ?? {};
   const activated = Boolean(instance.activated);
   const connected = ['open', 'connected'].includes(String(link.status || instance.status || '').toLowerCase());
-  const qrTtl = link.qrExpiresInSec ?? state.me?.qrExpiresInSec ?? 60;
-  const content = $('#modal-content');
-  content.innerHTML = `<button class="icon-button modal-close" type="button" data-action="close-modal" aria-label="Cerrar">${icon('close')}</button>
+  const mode = instance.pairingMode || 'pairing';
+  host.innerHTML = `<button class="icon-button modal-close" type="button" data-action="close-modal" aria-label="Cerrar">${icon('close')}</button>
     <span class="section-kicker">${icon('whatsapp')} Conectar en WhatsApp</span>
     <h2 id="modal-title" style="margin-top:11px">${escapeHtml(instance.name || 'SubBot')}</h2>
     <p class="modal-description">${escapeHtml(instance.phoneMasked || '')} · prefijo <strong class="mono">${escapeHtml(instance.prefix || '.')}</strong> · ${activated ? 'Activado' : 'Sin activar'} · ${connected ? 'Vinculado' : 'Sin vincular'}</p>
 
-    <div class="callout">${icon('shield')}<span><strong>Activa tu bot con .key</strong><br />Escribe <code>.key</code> desde WhatsApp a este bot (o a cualquier bot conectado) y pega aquí la clave que te devuelve.</span></div>
-    <form class="modal-form" id="activate-key-form" data-id="${escapeHtml(instance.id)}"><label class="field"><span class="field-label">Clave de activación</span><input class="text-input mono" type="text" name="activation-key" value="${escapeHtml(state.connectKey || '')}" placeholder="ABCD-2345" autocomplete="off" maxlength="20" ${activated ? 'disabled' : ''} /></label>${activated ? `<p class="field-hint">Este bot ya está activado.</p>` : `<button class="btn btn-primary btn-full" type="submit" ${state.connectLoading ? 'disabled' : ''}>${icon('check')} Activar bot</button>`}</form>
+    ${pairingCard({ id: instance.id, mode, connected, activated, context: 'modal' })}
+    ${mode === 'qr' && link.qrDataUrl && !connected ? `<div class="qr-frame"><img src="${escapeHtml(link.qrDataUrl)}" alt="Código QR real de WhatsApp" /></div><span class="expiry-label">QR real de WhatsApp · se renueva cada ~${state.me?.qrExpiresInSec ?? 20}s</span>` : ''}
+    ${state.pairing.loading ? `<div class="pairing-stage"><div class="atom-loader"><div class="react-star"><div class="nucleus"></div><div class="electron electron-1"></div><div class="electron electron-2"></div><div class="electron electron-3"></div></div></div><p>Pidiendo a WhatsApp el código de este número…</p></div>` : ''}
+
+    <div class="callout" style="margin-top:14px">${icon('shield')}<span><strong>Activa tu bot con .key</strong><br />Escribe <code>.key</code> desde WhatsApp a cualquier bot conectado y pega aquí la clave que te devuelve.</span></div>
+    <form class="modal-form" id="activate-key-form" data-id="${escapeHtml(instance.id)}">
+      <label class="field"><span class="field-label">Clave de activación</span><input class="text-input mono" type="text" name="activation-key" value="${escapeHtml(state.connectKey || '')}" placeholder="ABCD-2345" autocomplete="off" maxlength="20" ${activated ? 'disabled' : ''} /></label>
+      ${activated ? `<p class="field-hint">Este bot ya está activado.</p>` : `<button class="btn btn-primary btn-full" type="submit" ${state.connectLoading ? 'disabled' : ''}>${icon('check')} Activar bot</button>`}
+    </form>
     ${state.connectError ? `<p class="link-error" role="alert">${escapeHtml(state.connectError)}</p>` : ''}
 
-    <div class="callout" style="margin-top:14px">${icon('link')}<span><strong>Vinculación real con WhatsApp</strong><br />${instance.pairingMode === 'qr' ? 'Escanea el QR con el teléfono del bot.' : 'Escribe el pairing code en el teléfono del bot.'}</span></div>
-    ${instance.pairingMode === 'qr' && link.qrDataUrl ? `<div class="qr-frame"><img src="${escapeHtml(link.qrDataUrl)}" alt="Código QR real de WhatsApp" /></div><span class="expiry-label">QR real · se renueva cada ${qrTtl}s</span>` : ''}
-    ${instance.pairingMode !== 'qr' && (link.pairingFormatted || link.pairingCode) ? `<div class="qr-frame" style="display:flex;align-items:center;justify-content:center"><strong class="mono" style="font-size:28px;letter-spacing:6px">${escapeHtml(String(link.pairingFormatted || link.pairingCode))}</strong></div><span class="expiry-label">Pairing code real · caduca en ~60s</span>` : ''}
-    ${!link.qrDataUrl && !(link.pairingFormatted || link.pairingCode) ? `<div class="callout">${icon('bulb')}<span>${connected ? 'Ya está vinculado con WhatsApp.' : 'Pulsa Generar para pedir a WhatsApp el QR o el código.'}</span></div>` : ''}
-
-    <div class="wizard-actions" style="margin-top:14px"><button class="btn btn-outline" type="button" data-action="refresh-connect-link">${icon('link')} ${link.qrDataUrl || link.pairingCode ? 'Reintentar' : 'Generar vinculación'}</button>${connected && activated ? `<button class="btn btn-primary" type="button" data-action="close-modal">Listo ${icon('check')}</button>` : ''}</div>`;
+    <div class="wizard-actions" style="margin-top:14px">
+      <button class="btn btn-outline" type="button" data-action="close-modal">${icon('arrow-left')} Cerrar</button>
+      ${connected && activated ? `<button class="btn btn-primary" type="button" data-action="close-modal">Listo ${icon('check')}</button>` : ''}
+    </div>`;
 }
 
-function openConnect(instance) {
+/** Pinta el modal solo si cambió algo (evita parpadeos y perder el foco). */
+function paintConnectModal({ force = false } = {}) {
+  const layer = document.querySelector('#modal-layer');
+  const content = document.querySelector('#modal-content');
+  if (!layer || !content || layer.hidden || state.modalMode !== 'connect') return false;
+  const { html } = buildHtml(renderConnectModalInto);
+  if (!force && paint.last.modal === html) return false;
+  paint.last.modal = html;
+  const focus = focusSnapshot();
+  content.innerHTML = html;
+  if (focus) focusRestore(focus);
+  updatePairingCountdown();
+  return true;
+}
+
+async function openConnect(instance) {
+  state.modalMode = 'connect';
   state.connectTarget = { ...instance, linkData: null };
   state.connectKey = '';
   state.connectError = '';
   state.connectLoading = false;
-  renderConnectModal();
-  $('#modal-layer').hidden = false;
+  state.pairing = { ...state.pairing, id: instance.id, formatted: '', issuedAt: null, error: '', loading: false };
+  paint.last.modal = null;
+  paintConnectModal({ force: true });
+  const layer = document.querySelector('#modal-layer');
+  if (layer) layer.hidden = false;
   document.body.classList.add('modal-open');
-  request(`/instances/${encodeURIComponent(instance.id)}/link`).then((data) => {
-    if (state.connectTarget?.id === instance.id) {
-      state.connectTarget = { ...state.connectTarget, ...data, linkData: data };
-      renderConnectModal();
-      if (!['open', 'connected'].includes(String(data.status || ''))) pollConnect(instance.id);
-    }
-  }).catch((error) => showToast(error.message, 'error'));
+  await syncLink(instance.id);
+  if (instance.pairingMode === 'pairing' && !state.pairing.formatted) {
+    // el registro quedó sin código: se pide a WhatsApp (real, no inventado)
+    await requestPairing(instance.id, { silent: true });
+  }
+  startLinkWatch(instance.id);
 }
 
-function pollConnect(id) {
-  let attempts = 0;
-  const timer = setInterval(async () => {
-    attempts += 1;
-    if (!state.connectTarget || state.connectTarget.id !== id || attempts > 20) { clearInterval(timer); return; }
-    try {
-      const data = await request(`/instances/${encodeURIComponent(id)}/link`);
-      if (!state.connectTarget || state.connectTarget.id !== id) { clearInterval(timer); return; }
+/** Trae el estado real de vinculación del sub-bot y lo refleja en la UI. */
+async function syncLink(id, { silent = false } = {}) {
+  if (!id) return null;
+  try {
+    const data = await request(`/instances/${encodeURIComponent(id)}/link`);
+    if (state.connectTarget?.id === id) {
       state.connectTarget = { ...state.connectTarget, ...data, linkData: data };
-      renderConnectModal();
-      if (['open', 'connected'].includes(String(data.status || ''))) {
-        clearInterval(timer);
-        showToast('¡Sesión vinculada con WhatsApp!', 'success');
-        loadAdminData({ quiet: true });
-      }
-    } catch { /* reintenta en el próximo tick */ }
-  }, 4000);
+    }
+    const index = state.instances.findIndex((item) => item.id === id);
+    if (index >= 0) state.instances[index] = { ...state.instances[index], ...data, linkData: data };
+    if (data.pairingFormatted) {
+      rememberPairing({ id, formatted: data.pairingFormatted, issuedAt: data.pairingCodeAt ?? Date.now(), lifetimeSec: data.pairingExpiresInSec ?? PAIRING_LIFETIME_SEC });
+    }
+    if (state.flow.instanceId === id) state.flow.linkData = data;
+    if (['open', 'connected'].includes(String(data.status || '').toLowerCase())) stopLinkWatch(id);
+    scheduleRender();
+    paintConnectModal();
+    return data;
+  } catch (error) {
+    if (!silent) showToast(error.message || 'No se pudo consultar la vinculación.', 'error');
+    return null;
+  }
+}
+
+/* ── vigilancia de la vinculación (SSE + respaldo lento) ────────
+ * Antes se hacía un setInterval de 4 s que repintaba todo. Ahora el
+ * SSE avisa al instante y, si no hay stream, se consulta cada 10 s.
+ */
+const linkWatch = { id: null, timer: null, attempts: 0, sse: false };
+
+function stopLinkWatch(id = null) {
+  if (id && linkWatch.id && linkWatch.id !== id) return;
+  if (linkWatch.timer) clearInterval(linkWatch.timer);
+  linkWatch.timer = null;
+  linkWatch.id = null;
+  linkWatch.attempts = 0;
+}
+
+function startLinkWatch(id) {
+  if (!id) return;
+  stopLinkWatch();
+  linkWatch.id = id;
+  linkWatch.attempts = 0;
+  linkWatch.sse = state.stream.connected;
+  linkWatch.timer = setInterval(() => {
+    if (document.hidden) return;
+    if (linkWatch.sse) return; // el SSE ya informa en vivo
+    linkWatch.attempts += 1;
+    if (linkWatch.attempts > 24) { stopLinkWatch(); return; }
+    syncLink(id, { silent: true });
+  }, 10_000);
 }
 
 /* ── métricas (telemetría real del servidor) ─────────────────── */
@@ -609,7 +903,8 @@ function renderEndpointModal(endpoint) {
   if (!endpoint) return;
   state.selectedEndpoint = endpoint;
   const param = endpointParam(endpoint);
-  const path = `${endpoint.path}${state.endpointWithKey ? '?key=api-VX9xd' : ''}`;
+  const apiKey = state.apiUser?.apiKey || state.apiUser?.api_key || 'TU_API_KEY';
+  const path = `${endpoint.path}${state.endpointWithKey ? `?key=${apiKey}` : ''}`;
   $('#endpoint-modal').innerHTML = `<div class="endpoint-modal-head"><span class="bot-orb">${icon('code')}</span><span><h2 id="endpoint-modal-title">${escapeHtml(endpoint.name)}</h2><p>${escapeHtml(endpoint.description || endpoint.path)}</p></span><div class="endpoint-modal-actions"><button class="icon-button" type="button" data-action="copy-endpoint-url" aria-label="Copiar URL">${icon('link')}</button><button class="icon-button" type="button" data-action="close-endpoint" aria-label="Cerrar">${icon('close')}</button></div></div><div class="endpoint-modal-body"><section class="endpoint-url-box"><div class="endpoint-url-label"><span>${icon('bolt')} Endpoint URL</span><button class="key-switch ${state.endpointWithKey ? 'is-on' : ''}" type="button" data-action="toggle-endpoint-key"><span>Con key</span><i></i></button></div><div class="endpoint-url-line"><span class="method-badge">${escapeHtml(endpoint.method || 'GET')}</span><code id="endpoint-url-text">https://api.stellarwa.xyz${escapeHtml(path)}</code><button class="icon-button" type="button" data-action="copy-endpoint-url" aria-label="Copiar URL">${icon('copy')}</button><a class="icon-button" href="https://api.stellarwa.xyz${escapeHtml(path)}" target="_blank" rel="noreferrer" aria-label="Abrir endpoint">${icon('external')}</a></div></section><div><span class="endpoint-url-label">Código de ejemplo</span><div class="code-tabs">${[['curl', 'cURL'], ['javascript', 'JavaScript'], ['typescript', 'TypeScript'], ['python', 'Python']].map(([key, label]) => `<button class="${state.endpointCodeTab === key ? 'is-active' : ''}" type="button" data-action="endpoint-code-tab" data-tab="${key}">${label}</button>`).join('')}</div></div><section class="code-window"><div class="code-window-top"><span><i class="traffic-lights"><i></i><i></i><i></i></i> example.${state.endpointCodeTab === 'python' ? 'py' : state.endpointCodeTab === 'curl' ? 'sh' : 'js'}</span><button class="btn btn-outline btn-small" type="button" data-action="copy-endpoint-code">${icon('copy')} Copiar</button></div><pre><code>${escapeHtml(codeSnippet(endpoint))}</code></pre></section><form id="endpoint-playground-form" class="endpoint-params"><h3>${icon('chart')} Parámetros de entrada</h3><label class="field"><span class="field-label">${escapeHtml(param.name)} <span class="red">*</span></span><input class="text-input" name="endpoint-value" required placeholder="${escapeHtml(param.placeholder)}" /></label><button class="btn btn-primary btn-full" type="submit">${icon('bolt')} Realizar petición</button><p class="field-hint" id="endpoint-playground-message">Prueba visual del formulario. Las llamadas al catálogo externo no se ejecutan desde este panel.</p></form></div>`;
   $('#endpoint-layer').hidden = false;
   document.body.classList.add('modal-open');
@@ -649,45 +944,85 @@ function renderCommands() {
 
 /* ── router de páginas ───────────────────────────────────────── */
 
-function renderPage() {
-  document.body.classList.toggle('light-theme', state.theme === 'light');
-  renderHeader();
-  renderBottomNavigation();
-  const host = $('#main-content');
-  if (!host) return;
-  host.classList.toggle('is-wizard', state.view === 'register');
+function mainMarkup() {
   switch (state.view) {
-    case 'landing': renderLanding(); break;
-    case 'home': host.innerHTML = renderHome(); break;
-    case 'register': host.innerHTML = renderWizard(); break;
-    case 'bots': host.innerHTML = renderBots(); break;
-    case 'metrics': host.innerHTML = renderMetrics(); break;
-    case 'store': host.innerHTML = renderStore(); break;
+    case 'landing': return renderLanding();
+    case 'home': return renderHome();
+    case 'register': return renderWizard();
+    case 'bots': return renderBots();
+    case 'metrics': return renderMetrics();
+    case 'store': return renderStore();
     case 'endpoints':
-    case 'favorites': host.innerHTML = renderEndpoints(); renderEndpointResults(); break;
-    case 'tickets': host.innerHTML = renderTickets(); break;
-    case 'profile': host.innerHTML = renderProfile(); break;
-    case 'commands': host.innerHTML = renderCommands(); break;
-    default: state.view = 'landing'; renderLanding(); break;
+    case 'favorites': return renderEndpoints();
+    case 'tickets': return renderTickets();
+    case 'profile': return renderProfile();
+    case 'commands': return renderCommands();
+    default: state.view = 'landing'; return renderLanding();
   }
-  updateHeaderStatus();
+}
+
+/**
+ * Pinta la interfaz comparando con lo último dibujado: si nada cambió,
+ * el DOM queda intacto (ni QR recargados, ni saltos de scroll, ni
+ * formularios que pierden el foco). Devuelve true si tocó el DOM.
+ */
+function renderPage({ force = false } = {}) {
+  const editing = Boolean(activeField());
+  if (editing && !force) { scheduleRender(); return false; }
+
+  const header = buildHeader();
+  const nav = buildBottomNav();
+  const main = mainMarkup();
+  const isWizard = state.view === 'register';
+
+  let touched = false;
+  const focus = focusSnapshot();
+  const scrollY = window.scrollY;
+
+  touched = applyRegion('#site-header', 'header', header.html, header.className, { force }) || touched;
+  const navEl = document.querySelector('#bottom-navigation');
+  if (navEl) {
+    if (navEl.hidden !== nav.hidden) { navEl.hidden = nav.hidden; touched = true; }
+    if (!force && paint.last.nav === nav.html) { /* sin cambios */ }
+    else if (navEl.innerHTML !== nav.html) { paint.last.nav = nav.html; navEl.innerHTML = nav.html; touched = true; }
+  }
+  const mainEl = document.querySelector('#main-content');
+  if (mainEl) {
+    if (mainEl.classList.contains('is-wizard') !== isWizard) { mainEl.classList.toggle('is-wizard', isWizard); touched = true; }
+    touched = applyRegion('#main-content', 'main', main, null, { force }) || touched;
+  }
+
+  if (editing && focus) focusRestore(focus);
+  if (touched) {
+    window.scrollTo({ top: scrollY, behavior: 'auto' });
+    paint.counts.renders += 1;
+    paint.lastAt = Date.now();
+  } else {
+    paint.counts.skipped += 1;
+  }
+  afterRender({ touched });
+  return touched;
 }
 
 function updateHeaderStatus() {
-  const status = $('#header-service-copy');
-  if (status && state.health?.ok === false) status.textContent = 'Verificando servicios';
-  else if (status && state.health) status.textContent = 'Servicio operativo';
+  updateLiveChip();
 }
 
 function navigate(view, { replace = false } = {}) {
   if (view === 'menu') { openDrawer(); return; }
   if (!paths[view]) view = 'home';
+  const changed = state.view !== view;
   state.view = view;
   const url = paths[view];
   if (replace) window.history.replaceState({ view }, '', url);
   else if (window.location.pathname !== url) window.history.pushState({ view }, '', url);
-  renderPage();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (changed) {
+    // se limpian las cachés de pintado: la vista cambió de verdad
+    paint.last.main = null;
+    if (view !== 'register') paint.last.modal = null;
+    renderPage({ force: true });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
   if (view === 'home' || view === 'bots' || view === 'metrics') loadAdminData({ quiet: true });
   if (view === 'store') loadPlans({ quiet: true });
   if (view === 'tickets') loadTickets();
@@ -713,15 +1048,40 @@ function renderDrawer() {
 
 function openAuth() {
   state.authMode = state.authMode === 'api-register' ? 'api-register' : 'api-login';
+  state.modalMode = 'auth';
+  paint.last.modal = null;
   renderAuthModal();
   $('#modal-layer').hidden = false;
   document.body.classList.add('modal-open');
   setTimeout(() => $('#modal-content input')?.focus(), 40);
 }
 function closeModal() {
-  $('#modal-layer').hidden = true;
+  const layer = document.querySelector('#modal-layer');
+  if (layer) layer.hidden = true;
   state.connectTarget = null;
+  state.modalMode = null;
+  state.confirm = null;
+  stopLinkWatch();
   document.body.classList.remove('modal-open');
+}
+
+/** Diálogo de confirmación propio (mejor que window.confirm). */
+function openConfirm({ title, message, confirmLabel = 'Confirmar', onConfirm, danger = true }) {
+  state.confirm = { title, message, confirmLabel, onConfirm, danger };
+  const content = document.querySelector('#modal-content');
+  content.innerHTML = `<button class="icon-button modal-close" type="button" data-action="close-modal" aria-label="Cerrar">${icon('close')}</button>
+    <div class="confirm-card">
+      <span class="confirm-icon">${icon(danger ? 'shield' : 'help')}</span>
+      <h2 id="modal-title">${escapeHtml(title)}</h2>
+      <p>${escapeHtml(message)}</p>
+      <div class="confirm-actions">
+        <button class="btn btn-outline" type="button" data-action="close-modal">Cancelar</button>
+        <button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" type="button" data-action="confirm-dialog">${escapeHtml(confirmLabel)}</button>
+      </div>
+    </div>`;
+  document.querySelector('#modal-layer').hidden = false;
+  document.body.classList.add('modal-open');
+  setTimeout(() => document.querySelector('[data-action="confirm-dialog"]')?.focus(), 30);
 }
 function renderAuthModal() {
   const isRegister = state.authMode === 'api-register';
@@ -731,18 +1091,28 @@ function renderAuthModal() {
 
 function showToast(message, type = 'info') {
   const stack = $('#toast-stack');
-  if (!stack) return;
+  if (!stack || !message) return;
+  const last = stack.lastElementChild;
+  // mismo mensaje repetido: se reinicia el temporizador en vez de duplicar
+  if (last && last.dataset.message === String(message)) {
+    clearTimeout(Number(last.dataset.timer));
+    last.dataset.timer = String(window.setTimeout(() => last.remove(), 4300));
+    return;
+  }
   const element = document.createElement('div');
   element.className = `toast ${type === 'success' ? 'toast-success' : type === 'error' ? 'toast-error' : ''}`;
+  element.dataset.message = String(message);
   element.textContent = message;
   stack.append(element);
-  window.setTimeout(() => element.remove(), 4300);
+  while (stack.children.length > 4) stack.firstElementChild.remove();
+  element.dataset.timer = String(window.setTimeout(() => element.remove(), 4300));
 }
 
 async function copyText(value, successMessage = 'Copiado al portapapeles') {
   try {
     await navigator.clipboard.writeText(String(value));
     showToast(successMessage, 'success');
+    flashCopied(value);
   } catch {
     const area = document.createElement('textarea');
     area.value = String(value);
@@ -753,7 +1123,20 @@ async function copyText(value, successMessage = 'Copiado al portapapeles') {
     const copied = document.execCommand('copy');
     area.remove();
     showToast(copied ? successMessage : 'No se pudo copiar en este navegador', copied ? 'success' : 'error');
+    if (copied) flashCopied(value);
   }
+}
+
+/** Marca visualmente el elemento que contiene el texto copiado. */
+function flashCopied(value) {
+  const text = String(value);
+  const nodes = document.querySelectorAll('[data-pairing-code], #endpoint-url-text, .profile-key code');
+  nodes.forEach((node) => {
+    if (node.textContent.trim() !== text.trim()) return;
+    node.classList.remove('copied-flash');
+    void node.offsetWidth;
+    node.classList.add('copied-flash');
+  });
 }
 
 /* ── flujo de creación ───────────────────────────────────────── */
@@ -762,40 +1145,41 @@ function nextWizardStep() {
   const flow = state.flow;
   flow.error = '';
   if (flow.step === 1) {
-    if (!flow.name.trim()) { flow.error = 'Escribe un nombre para identificar tu bot.'; renderPage(); return; }
+    if (!flow.name.trim()) { flow.error = 'Escribe un nombre para identificar tu bot.'; renderPage({ force: true }); return; }
     flow.step = 2;
   } else if (flow.step === 2) {
     const digits = flow.phone.replace(/\D/g, '');
-    if (digits.length < 8) { flow.error = 'Ingresa un número de WhatsApp válido con código de país.'; renderPage(); return; }
+    if (digits.length < 8) { flow.error = 'Ingresa un número de WhatsApp válido con código de país.'; renderPage({ force: true }); return; }
     flow.step = 3;
   }
-  renderPage();
+  renderPage({ force: true });
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 function previousWizardStep() {
   const flow = state.flow;
-  if (flow.step === 4) flow.step = 3;
+  if (flow.step === 4) { flow.step = 3; stopLinkWatch(); }
   else if (flow.step > 1 && flow.step <= 3) flow.step -= 1;
   flow.error = '';
-  renderPage();
+  renderPage({ force: true });
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 function resetWizard() {
-  if (state.flow.poller) clearInterval(state.flow.poller);
-  state.flow = { step: 1, name: '', prefix: '.', phone: '', pairingMode: 'pairing', instanceId: null, linkData: null, loading: false, error: '', poller: null, connectKey: '', connectError: '', connectLoading: false };
+  stopLinkWatch();
+  state.flow = { step: 1, name: '', prefix: '.', phone: '', pairingMode: 'pairing', instanceId: null, linkData: null, loading: false, error: '', connectKey: '', connectError: '', connectLoading: false };
+  state.pairing = { ...state.pairing, id: null, formatted: '', issuedAt: null, error: '', loading: false };
   navigate('register');
 }
 
-/** Crea el bot (desconectado) y abre la pantalla de conexión con .key. */
+/** Crea el bot (desconectado) y abre la pantalla de conexión con `.key`. */
 async function generateLink() {
   const flow = state.flow;
   if (flow.loading) return;
   flow.error = '';
   const phone = flow.phone.replace(/\D/g, '');
-  if (phone.length < 8) { flow.step = 2; flow.error = 'Ingresa un número de WhatsApp válido antes de crear el bot.'; renderPage(); return; }
-  if (!flow.name.trim()) { flow.step = 1; flow.error = 'Escribe un nombre para identificar la instancia.'; renderPage(); return; }
+  if (phone.length < 8) { flow.step = 2; flow.error = 'Ingresa un número de WhatsApp válido antes de crear el bot.'; renderPage({ force: true }); return; }
+  if (!flow.name.trim()) { flow.step = 1; flow.error = 'Escribe un nombre para identificar la instancia.'; renderPage({ force: true }); return; }
   flow.loading = true;
-  renderPage();
+  renderPage({ force: true });
   try {
     if (!flow.instanceId) {
       const created = await request('/instances', {
@@ -807,48 +1191,41 @@ async function generateLink() {
       if (!flow.instanceId) throw new Error('El servidor no devolvió la instancia creada.');
       showToast('Bot creado (desconectado). Actívalo con .key.', 'success');
     }
-    // inicia la sesión de vinculación: el QR/pairing code son REALES (Baileys)
-    try {
-      await request(`/instances/${encodeURIComponent(flow.instanceId)}/start`, { method: 'POST' });
-    } catch (error) {
+    // abre la sesión de vinculación (el QR/pairing code son REALES de WhatsApp)
+    await request(`/instances/${encodeURIComponent(flow.instanceId)}/start`, { method: 'POST' }).catch((error) => {
       flow.error = error.message || 'No se pudo iniciar la sesión de vinculación.';
-    }
-    const link = await request(`/instances/${encodeURIComponent(flow.instanceId)}/link`);
-    flow.linkData = link;
+    });
+    const link = await request(`/instances/${encodeURIComponent(flow.instanceId)}/link`).catch(() => null);
+    flow.linkData = link ?? null;
     flow.loading = false;
     flow.step = 4;
-    renderPage();
-    showToast(flow.pairingMode === 'qr' ? 'QR real generado' : 'Pairing code real generado', 'success');
+    if (link?.pairingFormatted) {
+      rememberPairing({ id: flow.instanceId, formatted: link.pairingFormatted, issuedAt: link.pairingCodeAt ?? Date.now(), lifetimeSec: link.pairingExpiresInSec ?? PAIRING_LIFETIME_SEC });
+    } else if (flow.pairingMode === 'pairing') {
+      state.pairing = { ...state.pairing, id: flow.instanceId, formatted: '', issuedAt: null, error: '', loading: true };
+      renderPage({ force: true });
+      await requestPairing(flow.instanceId, { silent: true });
+    }
+    renderPage({ force: true });
     pollForLink();
     loadAdminData({ quiet: true });
   } catch (error) {
     flow.loading = false;
     flow.error = error.message || 'No se pudo crear el bot.';
-    renderPage();
+    renderPage({ force: true });
     showToast(flow.error, 'error');
   }
 }
 
+/**
+ * Vigila la vinculación del asistente. El SSE avisa al instante; si no
+ * hay stream, se consulta cada 10 s (antes: cada 4 s repintando todo).
+ */
 function pollForLink() {
-  if (state.flow.poller) clearInterval(state.flow.poller);
-  let attempts = 0;
-  state.flow.poller = setInterval(async () => {
-    attempts += 1;
-    if (state.view !== 'register' || !state.flow.instanceId || attempts > 30) { clearInterval(state.flow.poller); state.flow.poller = null; return; }
-    try {
-      const link = await request(`/instances/${encodeURIComponent(state.flow.instanceId)}/link`);
-      state.flow.linkData = link;
-      const target = state.instances.find((item) => item.id === state.flow.instanceId);
-      const connected = ['open', 'connected'].includes(String(link.status || '').toLowerCase());
-      if (connected && (target?.activated ?? link.activated)) {
-        clearInterval(state.flow.poller);
-        state.flow.poller = null;
-        state.flow.step = 5;
-        showToast('¡Sesión conectada y activada!', 'success');
-      }
-      if (state.view === 'register') renderPage();
-    } catch { /* reintenta en el próximo tick */ }
-  }, 4000);
+  stopLinkWatch();
+  const id = state.flow.instanceId;
+  if (!id) return;
+  startLinkWatch(id);
 }
 
 async function refreshLink() {
@@ -856,20 +1233,21 @@ async function refreshLink() {
   if (!flow.instanceId) { await generateLink(); return; }
   flow.loading = true;
   flow.error = '';
-  renderPage();
+  renderPage({ force: true });
   try {
     await request(`/instances/${encodeURIComponent(flow.instanceId)}/start`, { method: 'POST' }).catch(() => null);
-    if (flow.pairingMode === 'pairing') await request(`/instances/${encodeURIComponent(flow.instanceId)}/pairing/refresh`, { method: 'POST' }).catch(() => null);
-    const link = await request(`/instances/${encodeURIComponent(flow.instanceId)}/link`);
-    flow.linkData = link;
+    if (flow.pairingMode === 'pairing') {
+      await requestPairing(flow.instanceId, { silent: true });
+    }
+    await syncLink(flow.instanceId, { silent: true });
     flow.loading = false;
-    renderPage();
-    showToast('Vinculación real actualizada', 'success');
+    renderPage({ force: true });
+    showToast('Vinculación actualizada', 'success');
     pollForLink();
   } catch (error) {
     flow.loading = false;
     flow.error = error.message;
-    renderPage();
+    renderPage({ force: true });
     showToast(error.message, 'error');
   }
 }
@@ -880,12 +1258,12 @@ async function activateInstance(id, key) {
   const clean = String(key || '').trim();
   if (!clean) {
     const message = 'Escribe la clave que te dio el bot con el comando .key.';
-    if (state.connectTarget) { state.connectError = message; renderConnectModal(); }
-    else { state.flow.connectError = message; renderPage(); }
+    if (state.connectTarget) { state.connectError = message; paintConnectModal({ force: true }); }
+    else { state.flow.connectError = message; renderPage({ force: true }); }
     return;
   }
-  if (state.connectTarget) { state.connectLoading = true; state.connectError = ''; renderConnectModal(); }
-  else { state.flow.connectLoading = true; state.flow.connectError = ''; renderPage(); }
+  if (state.connectTarget) { state.connectLoading = true; state.connectError = ''; paintConnectModal({ force: true }); }
+  else { state.flow.connectLoading = true; state.flow.connectError = ''; renderPage({ force: true }); }
   try {
     await request(`/instances/${encodeURIComponent(id)}/activate`, { method: 'POST', body: { key: clean } });
     showToast('¡Bot activado! Ya puede usar todos sus comandos.', 'success');
@@ -895,15 +1273,15 @@ async function activateInstance(id, key) {
     if (state.connectTarget) {
       const updated = state.instances.find((item) => item.id === id);
       if (updated) state.connectTarget = { ...state.connectTarget, ...updated };
-      renderConnectModal();
+      paintConnectModal({ force: true });
     } else {
-      renderPage();
+      renderPage({ force: true });
       pollForLink();
     }
   } catch (error) {
     const message = error.message || 'No se pudo activar el bot.';
-    if (state.connectTarget) { state.connectLoading = false; state.connectError = message; renderConnectModal(); }
-    else { state.flow.connectLoading = false; state.flow.connectError = message; renderPage(); }
+    if (state.connectTarget) { state.connectLoading = false; state.connectError = message; paintConnectModal({ force: true }); }
+    else { state.flow.connectLoading = false; state.flow.connectError = message; renderPage({ force: true }); }
     showToast(message, 'error');
   }
 }
@@ -911,23 +1289,14 @@ async function activateInstance(id, key) {
 async function refreshConnectLink() {
   const instance = state.connectTarget;
   if (!instance) return;
-  try {
-    await request(`/instances/${encodeURIComponent(instance.id)}/start`, { method: 'POST' }).catch(() => null);
-    if (instance.pairingMode === 'pairing') await request(`/instances/${encodeURIComponent(instance.id)}/pairing/refresh`, { method: 'POST' }).catch(() => null);
-    const data = await request(`/instances/${encodeURIComponent(instance.id)}/link`);
-    if (state.connectTarget?.id === instance.id) {
-      state.connectTarget = { ...state.connectTarget, ...data, linkData: data };
-      renderConnectModal();
-      showToast('Vinculación real actualizada', 'success');
-      pollConnect(instance.id);
-    }
-  } catch (error) {
-    showToast(error.message || 'No se pudo generar la vinculación.', 'error');
-  }
+  await syncLink(instance.id, { silent: true });
+  if ((instance.pairingMode || 'pairing') === 'pairing') await requestPairing(instance.id, { silent: true });
+  startLinkWatch(instance.id);
 }
 
 function openEditInstance(instance) {
   state.editTarget = instance;
+  state.modalMode = 'edit';
   const content = $('#modal-content');
   content.innerHTML = `<button class="icon-button modal-close" type="button" data-action="close-modal" aria-label="Cerrar">${icon('close')}</button><span class="section-kicker">${icon('bot')} Editar bot</span><h2 id="modal-title" style="margin-top:11px">${escapeHtml(instance.name || 'SubBot')}</h2><p class="modal-description">Cambia el nombre o el prefijo de comandos (# - + . /).</p><form class="modal-form" id="edit-instance-form" data-id="${escapeHtml(instance.id)}"><label class="field"><span class="field-label">Nombre</span><input class="text-input" type="text" name="instance-name" value="${escapeHtml(instance.name || '')}" maxlength="40" required /></label><div class="field"><span class="field-label">Prefijo de comandos</span><div class="pairing-methods">${PREFIXES.map((prefix) => `<button class="pairing-option ${(instance.prefix || '.') === prefix ? 'is-selected' : ''}" type="button" data-action="edit-prefix" data-prefix="${prefix}"><span class="pairing-option-icon">${icon('hash')}</span><span><strong>${escapeHtml(prefix)}</strong><small>${escapeHtml(prefix)}menu</small></span></button>`).join('')}</div></div><input type="hidden" name="instance-prefix" value="${escapeHtml(instance.prefix || '.')}" /><button class="btn btn-primary btn-full" type="submit">${icon('check')} Guardar cambios</button></form>`;
   $('#modal-layer').hidden = false;
@@ -936,19 +1305,20 @@ function openEditInstance(instance) {
 
 /* ── datos del servidor ──────────────────────────────────────── */
 
-async function loadAdminData({ quiet = false } = {}) {
+async function loadAdminData({ quiet = false, force = false } = {}) {
   try {
     const results = await Promise.allSettled([
-      request('/me'), request('/stats'), request('/instances'), request('/groups'), request('/system'),
+      request('/me'), request('/state'), request('/groups'), request('/system'),
     ]);
     if (results[0].status === 'fulfilled') state.me = results[0].value;
-    if (results[1].status === 'fulfilled') state.stats = results[1].value;
-    if (results[2].status === 'fulfilled') state.instances = results[2].value.instances || [];
-    if (results[3].status === 'fulfilled') state.groups = results[3].value.groups || [];
-    if (results[4].status === 'fulfilled') state.system = results[4].value;
+    if (results[1].status === 'fulfilled') mergeSnapshot(results[1].value, { force });
+    if (results[2].status === 'fulfilled') state.groups = results[2].value.groups || [];
+    if (results[3].status === 'fulfilled') state.system = results[3].value;
+    state.loading = false;
     if (state.view !== 'landing') renderPage();
     if (!quiet) showToast('Datos actualizados', 'success');
   } catch (error) {
+    state.loading = false;
     if (!quiet) showToast(error.message || 'No se pudieron actualizar los datos', 'error');
   }
 }
@@ -1070,9 +1440,18 @@ async function redeemCoupon(form) {
 
 async function runInstanceAction(action, id) {
   if (!id) return;
-  if (action === 'delete' && !window.confirm('¿Eliminar este SubBot? Esta acción también borra sus datos de la base de datos.')) return;
+  if (action === 'delete') {
+    const instance = state.instances.find((item) => item.id === id);
+    openConfirm({
+      title: 'Eliminar sub-bot',
+      message: `Se borrará "${instance?.name || id}" y todos sus datos (grupos, fichas, personajes y auditoría). No se puede deshacer.`,
+      confirmLabel: 'Eliminar',
+      onConfirm: () => runInstanceAction('delete-confirmed', id),
+    });
+    return;
+  }
   try {
-    if (action === 'delete') await request(`/instances/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (action === 'delete' || action === 'delete-confirmed') await request(`/instances/${encodeURIComponent(id)}`, { method: 'DELETE' });
     else await request(`/instances/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
     showToast(action === 'stop' ? 'Sesión detenida' : action === 'start' ? 'Sesión iniciada' : 'Sub-bot eliminado', 'success');
     await loadAdminData({ quiet: true });
@@ -1098,7 +1477,7 @@ function toggleTheme() {
 
 function openTicketForm() {
   state.newTicketOpen = !state.newTicketOpen;
-  renderPage();
+  renderPage({ force: true });
   if (state.newTicketOpen) setTimeout(() => $('[name="ticket-title"]')?.focus(), 20);
 }
 async function submitTicket(form) {
@@ -1120,7 +1499,7 @@ async function submitTicket(form) {
 function setEndpointFilter(key, value) {
   if (key === 'method') state.endpointMethod = value;
   if (key === 'tier') state.endpointTier = value;
-  renderPage();
+  renderPage({ force: true });
 }
 function updateEndpointSearch() {
   if (state.view !== 'endpoints' && state.view !== 'favorites') return;
@@ -1131,7 +1510,11 @@ function updateEndpointSearch() {
 
 function handleClick(event) {
   const landingAnchor = event.target.closest('.landing-header .header-links a[href^="#"]');
-  if (landingAnchor) $('.header-links')?.classList.remove('mobile-open');
+  if (landingAnchor) {
+    $('.header-links')?.classList.remove('mobile-open');
+    const check = document.getElementById('landing-menu-check');
+    if (check) check.checked = false;
+  }
   const pageTarget = event.target.closest('[data-page]');
   if (pageTarget) {
     event.preventDefault();
@@ -1153,12 +1536,12 @@ function handleClick(event) {
   else if (action === 'auth-mode') { state.authMode = actionTarget.dataset.mode; renderAuthModal(); }
   else if (action === 'wizard-next') nextWizardStep();
   else if (action === 'wizard-back') previousWizardStep();
-  else if (action === 'select-prefix') { state.flow.prefix = actionTarget.dataset.prefix; renderPage(); }
-  else if (action === 'select-method') { state.flow.pairingMode = actionTarget.dataset.method; renderPage(); }
+  else if (action === 'select-prefix') { state.flow.prefix = actionTarget.dataset.prefix; renderPage({ force: true }); }
+  else if (action === 'select-method') { state.flow.pairingMode = actionTarget.dataset.method; renderPage({ force: true }); }
   else if (action === 'generate-link') generateLink();
   else if (action === 'refresh-link') refreshLink();
   else if (action === 'reset-flow') resetWizard();
-  else if (action === 'finish-flow') { state.flow.step = 5; renderPage(); }
+  else if (action === 'finish-flow') { state.flow.step = 5; renderPage({ force: true }); }
   else if (action === 'copy-pairing-code') copyText(actionTarget.dataset.code || '', 'Código copiado');
   else if (action === 'refresh-data') loadAdminData();
   else if (action === 'open-connect') {
@@ -1166,6 +1549,17 @@ function handleClick(event) {
     if (instance) openConnect(instance);
   }
   else if (action === 'refresh-connect-link') refreshConnectLink();
+  else if (action === 'request-pairing') requestPairing(actionTarget.dataset.id || state.pairing.id);
+  else if (action === 'copy-pairing') {
+    const code = state.pairing.formatted || document.querySelector('[data-pairing-code]')?.textContent?.trim() || '';
+    copyText(code, 'Pairing code copiado');
+  }
+  else if (action === 'check-link') syncLink(actionTarget.dataset.id || state.pairing.id, { silent: false });
+  else if (action === 'confirm-dialog') {
+    const pending = state.confirm?.onConfirm;
+    closeModal();
+    if (typeof pending === 'function') pending();
+  }
   else if (action === 'edit-instance') {
     const instance = state.instances.find((item) => item.id === actionTarget.dataset.id);
     if (instance) openEditInstance(instance);
@@ -1183,11 +1577,11 @@ function handleClick(event) {
   else if (action === 'purchase-plan') purchasePlan(actionTarget.dataset.plan);
   else if (action === 'endpoint-method') setEndpointFilter('method', actionTarget.dataset.method);
   else if (action === 'endpoint-tier') setEndpointFilter('tier', actionTarget.dataset.tier);
-  else if (action === 'endpoint-sort') { state.endpointSort = state.endpointSort === 'az' ? 'za' : 'az'; renderPage(); }
+  else if (action === 'endpoint-sort') { state.endpointSort = state.endpointSort === 'az' ? 'za' : 'az'; renderPage({ force: true }); }
   else if (action === 'toggle-category') {
     const category = actionTarget.dataset.category;
     if (state.openCategories.has(category)) state.openCategories.delete(category); else state.openCategories.add(category);
-    renderPage();
+    renderPage({ force: true });
   }
   else if (action === 'open-endpoint') {
     const endpoint = endpointByPath(actionTarget.dataset.path);
@@ -1283,6 +1677,11 @@ function handleKeydown(event) {
     $('#endpoint-layer').hidden = true;
     document.body.classList.remove('modal-open');
   }
+  // «/» enfoca la búsqueda visible (comodidad tipo panel moderno)
+  if (event.key === '/' && !activeField()) {
+    const search = document.querySelector('#endpoint-search, #ticket-search, #command-search');
+    if (search) { event.preventDefault(); search.focus(); }
+  }
   if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('.endpoint-row[role="button"], .endpoint-category-head[role="button"]')) {
     event.preventDefault();
     event.target.click();
@@ -1290,30 +1689,90 @@ function handleKeydown(event) {
 }
 
 /** Estado en vivo vía SSE: solo datos reales del servidor. */
+function applyInstanceState(snapshot) {
+  if (!snapshot?.id) return;
+  const index = state.instances.findIndex((item) => item.id === snapshot.id);
+  const merged = index >= 0 ? { ...state.instances[index], ...snapshot, live: true } : { ...snapshot, live: true };
+  if (index >= 0) state.instances[index] = merged;
+  else state.instances = [...state.instances, merged];
+
+  if (state.connectTarget?.id === snapshot.id) {
+    state.connectTarget = { ...state.connectTarget, ...snapshot, linkData: { ...(state.connectTarget.linkData ?? {}), ...snapshot } };
+  }
+  if (state.flow.instanceId === snapshot.id) {
+    state.flow.linkData = { ...(state.flow.linkData ?? {}), ...snapshot };
+  }
+  if (snapshot.pairingCode && snapshot.pairingCode !== state.pairing.code) {
+    state.pairing = { ...state.pairing, id: snapshot.id, code: snapshot.pairingCode, formatted: snapshot.pairingFormatted || snapshot.pairingCode, issuedAt: snapshot.pairingCodeAt ?? Date.now(), error: '', loading: false };
+    startPairingTicker();
+    showToast('Pairing code real recibido de WhatsApp', 'success');
+  }
+  if (snapshot.status === 'open') {
+    stopLinkWatch(snapshot.id);
+    if (state.connectTarget?.id === snapshot.id) showToast('¡Sesión vinculada con WhatsApp!', 'success');
+    loadAdminData({ quiet: true });
+  }
+  scheduleRender();
+}
+
 function connectStream() {
+  if (state.stream.source || document.hidden) return;
   try {
     const source = new EventSource('/api/stream');
-    source.addEventListener('status', (event) => {
+    state.stream.source = source;
+
+    source.addEventListener('hello', () => {
+      state.stream.connected = true;
+      state.stream.since = Date.now();
+      updateLiveChip();
+    });
+    source.addEventListener('snapshot', (event) => {
+      state.stream.connected = true;
       try {
         const snapshot = JSON.parse(event.data);
-        if (!snapshot?.id) return;
-        const index = state.instances.findIndex((item) => item.id === snapshot.id);
-        if (index >= 0) {
-          state.instances[index] = { ...state.instances[index], ...snapshot, live: true };
-          if (state.view === 'bots' || state.view === 'register' || state.view === 'home') renderPage();
-          if (state.connectTarget?.id === snapshot.id) {
-            state.connectTarget = { ...state.connectTarget, ...snapshot };
-            renderConnectModal();
-          }
-        }
+        mergeSnapshot(snapshot);
       } catch { /* evento malformado */ }
+      updateLiveChip();
     });
-  } catch { /* sin SSE */ }
+    source.addEventListener('status', (event) => {
+      try { applyInstanceState(JSON.parse(event.data)); } catch { /* evento malformado */ }
+    });
+    source.addEventListener('ping', () => {
+      state.stream.connected = true;
+      updateLiveChip();
+    });
+    source.onerror = () => {
+      // EventSource reconecta solo (el servidor envía `retry: 15000`).
+      state.stream.connected = false;
+      updateLiveChip();
+    };
+  } catch { /* sin SSE: queda el sondeo de respaldo */ }
+}
+
+/** Aplica el snapshot completo del servidor (SSE o /api/state). */
+function mergeSnapshot(snapshot, { force = false } = {}) {
+  if (!snapshot?.ok) return false;
+  const changed = force || snapshot.revision !== state.revision;
+  if (!changed) return false;
+  state.revision = snapshot.revision;
+  if (Array.isArray(snapshot.instances)) state.instances = snapshot.instances;
+  if (snapshot.stats) state.stats = { ...(state.stats ?? {}), ...snapshot.stats };
+  scheduleRender();
+  return true;
 }
 
 async function boot() {
-  document.body.classList.toggle('light-theme', state.theme === 'light');
-  renderPage();
+  applyThemeClass();
+  // preferencia del sistema solo la primera vez
+  if (!localStorage.getItem('stellar_theme')) {
+    state.theme = window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  }
+  const loading = $('#main-content');
+  if (loading && state.view !== 'landing') {
+    loading.innerHTML = '<div class="page-content"><div class="skeleton" style="height:120px;margin-bottom:14px"></div><div class="skeleton" style="height:220px"></div></div>';
+  }
+  renderPage({ force: true });
+
   document.addEventListener('click', handleClick);
   document.addEventListener('input', handleInput);
   document.addEventListener('change', handleChange);
@@ -1321,14 +1780,34 @@ async function boot() {
   document.addEventListener('keydown', handleKeydown);
   window.addEventListener('popstate', () => {
     state.view = routeFromPath();
-    renderPage();
+    renderPage({ force: true });
     if (['home', 'bots', 'metrics'].includes(state.view)) loadAdminData({ quiet: true });
     if (state.view === 'tickets') loadTickets();
   });
 
-  await Promise.allSettled([loadHealth(), loadCatalog(), loadPlans({ quiet: true }), loadApiAccount(), loadAdminData({ quiet: true })]);
-  if (state.view !== 'landing') renderPage();
+  // con la pestaña oculta no se gasta red ni batería
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      state.stream.source?.close();
+      state.stream.source = null;
+      state.stream.connected = false;
+      updateLiveChip();
+    } else {
+      connectStream();
+      loadAdminData({ quiet: true });
+    }
+  });
+
+  await Promise.allSettled([loadHealth(), loadCatalog(), loadPlans({ quiet: true }), loadApiAccount(), loadAdminData({ quiet: true, force: true })]);
+  state.loading = false;
+  renderPage({ force: true });
   connectStream();
+
+  // respaldo: si el SSE no está disponible, una consulta lenta y silenciosa
+  setInterval(() => {
+    if (document.hidden || state.stream.connected) return;
+    loadAdminData({ quiet: true });
+  }, 20_000).unref?.();
 }
 
 boot();

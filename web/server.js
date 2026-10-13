@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { createAuth } from './auth.js';
-import { createRouter } from './routes.js';
+import { createRouter, buildStateSnapshot } from './routes.js';
 import { scoped } from '../src/core/logger.js';
 import { env } from '../src/config/env.js';
 
@@ -29,6 +29,21 @@ function broadcast(event, data) {
       clients.delete(res);
     }
   }
+}
+
+/**
+ * Deduplica los eventos `status`: Baileys emite varias actualizaciones
+ * por reconexión y antes el panel se redibujaba en todas. Solo se
+ * reenvía lo que cambió de verdad.
+ */
+const lastStatusPayload = new Map();
+function broadcastStatus(snapshot) {
+  const id = snapshot?.id ?? snapshot?.instanceId;
+  if (!id) return;
+  const signature = JSON.stringify([snapshot.status, snapshot.qr ?? null, snapshot.pairingCode ?? null, snapshot.lastError ?? null, snapshot.jid ?? null, Boolean(snapshot.activated)]);
+  if (lastStatusPayload.get(id) === signature) return;
+  lastStatusPayload.set(id, signature);
+  broadcast('status', snapshot);
 }
 
 /**
@@ -55,12 +70,20 @@ export async function createWebServer({ manager, port = env.webPort, host = env.
   app.get('/api/stream', auth.requireAuth, (req, res) => {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache, no-transform',
+      'Cache-Control': 'no-cache, no-store, no-transform',
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
       'Access-Control-Allow-Origin': '*',
     });
+    // `retry` evita que el navegador reconecte cada 3 s por defecto.
+    res.write('retry: 15000\n\n');
     res.write(`event: hello\ndata: ${JSON.stringify({ ok: true, at: Date.now() })}\n\n`);
+    // Estado completo al conectar: el panel no necesita pedirlo por su cuenta.
+    try {
+      res.write(`event: snapshot\ndata: ${JSON.stringify(buildStateSnapshot(manager))}\n\n`);
+    } catch {
+      /* el cliente se fue antes del primer snapshot */
+    }
     clients.add(res);
 
     const heartbeat = setInterval(() => {
@@ -72,10 +95,12 @@ export async function createWebServer({ manager, port = env.webPort, host = env.
     }, 25_000);
     heartbeat.unref?.();
 
-    req.on('close', () => {
+    const close = () => {
       clearInterval(heartbeat);
       clients.delete(res);
-    });
+    };
+    req.on('close', close);
+    res.on('close', close);
   });
 
   /* ── API ────────────────────────────────────────────────────── */
@@ -100,8 +125,8 @@ export async function createWebServer({ manager, port = env.webPort, host = env.
     res.status(500).json({ ok: false, error: `Error interno: ${error?.message ?? 'desconocido'}` });
   });
 
-  /* ── eventos del manager → SSE ──────────────────────────────── */
-  manager.on('status', (snapshot) => broadcast('status', snapshot));
+  /* ── eventos del manager → SSE (deduplicados) ───────────────── */
+  manager.on('status', (snapshot) => broadcastStatus(snapshot));
   manager.on('log', (entry) => broadcast('log', { ...entry, at: Date.now() }));
 
   /* ── listen con fallback de puerto ──────────────────────────── */
@@ -119,8 +144,17 @@ export async function createWebServer({ manager, port = env.webPort, host = env.
     broadcast,
     stop: () =>
       new Promise((resolve) => {
+        // cierra primero los streams SSE abiertos: si no, `server.close()`
+        // se queda esperando conexiones vivas (apagado lento en producción).
+        for (const res of clients) {
+          try {
+            res.write('event: bye\ndata: {}\n\n');
+            res.end();
+          } catch { /* conexión ya cerrada */ }
+        }
         clients.clear();
         server.close(() => resolve());
+        server.closeAllConnections?.();
         setTimeout(() => resolve(), 1500).unref?.();
       }),
   };

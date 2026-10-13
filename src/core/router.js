@@ -20,7 +20,7 @@ import { scoped } from './logger.js';
 const log = scoped('router');
 
 /** Comandos universales: se aceptan con CUALQUIERA de los prefijos (# - + . /). */
-const UNIVERSAL_COMMANDS = new Set(['key', 'clave']);
+const UNIVERSAL_COMMANDS = new Set(['key', 'clave', 'pairing', 'codigo', 'código', 'pairingcode', 'vincular']);
 
 /** Prefijos aceptados: el del sub-bot, el del grupo (config) y el global. */
 export function prefixesFor(ctx) {

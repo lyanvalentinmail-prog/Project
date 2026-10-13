@@ -1201,3 +1201,223 @@ body.modal-open { overflow: hidden; }
   .landing-header .header-links.mobile-open .header-link:hover { background: rgba(255,255,255,.05); }
   .command-grid { grid-template-columns: 1fr; }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   Componentes de uiverse.io (MIT) adaptados a la paleta de Stellar Wa
+   ──────────────────────────────────────────────────────────────────
+   ① Botón con glow · cssbuttons-io/funny-dog-69
+      https://uiverse.io/cssbuttons-io/funny-dog-69
+   ② Loader átomo · OMPRABHU8125/nice-sheep-25
+      https://uiverse.io/OMPRABHU8125/nice-sheep-25
+   ③ Switch hamburguesa · vinodjangid07/tame-eagle-29
+      https://uiverse.io/vinodjangid07/tame-eagle-29
+   ④ Tarjeta con icono degradado · vk-uiux/nasty-chicken-72
+      https://uiverse.io/vk-uiux/nasty-chicken-72
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ① Botón glow (uiverse · cssbuttons-io/funny-dog-69) */
+.glow-btn {
+  --glow-color: var(--purple-bright);
+  --glow-spread-color: rgba(149, 84, 245, .7);
+  --btn-color: #21123c;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 48px;
+  padding: 0 26px;
+  border: 1.5px solid var(--glow-color);
+  border-radius: 15px;
+  color: var(--glow-color);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: .2px;
+  background-color: var(--btn-color);
+  box-shadow: 0 0 .55em .08em rgba(169, 115, 255, .55), 0 0 1.6em .18em rgba(126, 53, 227, .28), inset 0 0 .45em .06em rgba(169, 115, 255, .35);
+  cursor: pointer;
+  transition: all .3s var(--ease);
+}
+.glow-btn .icon { width: 17px; height: 17px; }
+.glow-btn::after {
+  position: absolute;
+  top: 120%;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background-color: var(--glow-spread-color);
+  filter: blur(1.6em);
+  opacity: .5;
+  content: '';
+  pointer-events: none;
+  transform: perspective(1.5em) rotateX(35deg) scale(1, .6);
+}
+.glow-btn:hover { color: #fff; background-color: var(--glow-color); }
+.glow-btn:active { transform: translateY(1px); }
+.glow-btn:disabled { opacity: .5; cursor: progress; }
+.glow-btn.glow-btn-soft { --btn-color: rgba(33, 18, 60, .55); min-height: 42px; padding: 0 18px; font-size: 12.5px; }
+.light-theme .glow-btn { --btn-color: #efe6ff; color: #5b23b8; }
+.light-theme .glow-btn:hover { color: #fff; }
+
+/* ② Loader átomo (uiverse · OMPRABHU8125/nice-sheep-25) */
+.atom-loader {
+  --atom-size: 8.5rem;
+  --atom-color: var(--purple-bright);
+  --atom-color-soft: rgba(169, 115, 255, .62);
+  position: relative;
+  display: grid;
+  width: calc(var(--atom-size) * 1.15);
+  height: calc(var(--atom-size) * .72);
+  place-items: center;
+  pointer-events: none;
+}
+.atom-loader .react-star {
+  position: relative;
+  display: flex;
+  width: var(--atom-size);
+  height: calc(var(--atom-size) * .52);
+  align-items: center;
+  justify-content: center;
+  animation: atom-rotate 3s infinite;
+}
+.atom-loader .nucleus {
+  position: absolute;
+  width: calc(var(--atom-size) * .16);
+  height: calc(var(--atom-size) * .16);
+  border-radius: 50%;
+  background: linear-gradient(var(--purple-deep), var(--purple-bright));
+  box-shadow: 0 0 12px rgba(169, 115, 255, .75);
+  animation: atom-rotate 1s linear infinite;
+}
+.atom-loader .electron {
+  position: absolute;
+  width: var(--atom-size);
+  height: calc(var(--atom-size) * .4);
+  border: 2px solid var(--atom-color-soft);
+  border-radius: 50%;
+  animation: atom-revolve 1s linear infinite;
+}
+.atom-loader .electron::before {
+  position: absolute;
+  top: 60%;
+  left: 100%;
+  width: .42rem;
+  height: .42rem;
+  border-radius: 50%;
+  background-color: var(--atom-color);
+  box-shadow: 0 0 8px var(--atom-color);
+  content: '';
+  transform: translate(-50%, -50%);
+  animation: atom-move 1s infinite;
+}
+.atom-loader .electron-2 { transform: rotate(60deg); animation-delay: -.66s; }
+.atom-loader .electron-2::before { animation-delay: -.66s; }
+.atom-loader .electron-3 { transform: rotate(-60deg); }
+@keyframes atom-rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg) scale3d(1.06, 1.06, 0); } }
+@keyframes atom-revolve {
+  0% { border-color: var(--atom-color-soft); border-right-color: transparent; }
+  25% { border-color: var(--atom-color-soft); border-bottom-color: transparent; }
+  50% { border-color: var(--atom-color-soft); border-left-color: transparent; }
+  75% { border-color: var(--atom-color-soft); border-top-color: transparent; }
+  100% { border-color: var(--atom-color-soft); border-right-color: transparent; }
+}
+@keyframes atom-move {
+  0% { top: 60%; left: 100%; }
+  25% { top: 100%; left: 60%; }
+  50% { top: 60%; left: 0%; }
+  75% { top: 0%; left: 60%; }
+  100% { top: 60%; left: 100%; }
+}
+.pairing-stage { display: grid; justify-items: center; gap: 6px; padding: 10px 0 4px; }
+.pairing-stage p { margin: 0; color: var(--text-secondary); font-size: 12px; }
+
+/* ③ Switch hamburguesa (uiverse · vinodjangid07/tame-eagle-29) */
+.uhamburger { display: inline-flex; align-items: center; }
+.uhamburger input { display: none; }
+.uhamburger .toggle {
+  position: relative;
+  display: flex;
+  width: 38px;
+  height: 38px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  cursor: pointer;
+  transition-duration: .3s;
+}
+.uhamburger .bars { width: 100%; height: 3px; border-radius: 5px; background: var(--text); transition-duration: .3s; }
+.uhamburger input:checked + .toggle { transform: rotate(-90deg); }
+.uhamburger input:checked + .toggle #bar2 { z-index: 2; margin-left: 0; transform: translateY(10px) rotate(60deg); transform-origin: right; transition-duration: .3s; }
+.uhamburger input:checked + .toggle #bar1 { z-index: 1; transform: translateY(20px) rotate(-60deg); transform-origin: left; transition-duration: .3s; }
+
+/* ④ Tarjeta con icono degradado (uiverse · vk-uiux/nasty-chicken-72) */
+.uv-card { position: relative; overflow: hidden; }
+.uv-card .shortcut-icon {
+  background: linear-gradient(90deg, #a973ff 0%, #ff5ce1 40%, rgba(20, 14, 33, .25) 62%);
+  background-position: 0 0;
+  background-size: 200px;
+  box-shadow: 0 8px 22px rgba(126, 53, 227, .22);
+  transition: background-position .6s var(--ease), transform .3s var(--ease);
+}
+.uv-card:hover .shortcut-icon { background-position: -110px 0; transform: scale(1.06); }
+.uv-card .shortcut-icon .icon { color: #fff; }
+.uv-card .shortcut-reveal { max-height: 0; opacity: 0; transition: max-height .3s var(--ease), opacity .3s var(--ease); }
+.uv-card:hover .shortcut-reveal { max-height: 46px; opacity: 1; }
+
+/* ── Pairing code real (panel) ─────────────────────────────────── */
+.pairing-card { position: relative; display: grid; gap: 15px; padding: 20px; border: 1px solid rgba(169, 115, 255, .28); border-radius: var(--radius); background: linear-gradient(160deg, rgba(149, 84, 245, .13), rgba(11, 11, 13, .6)); }
+.pairing-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.pairing-card-head h3 { margin: 0; font-size: 15px; }
+.pairing-card-head small { color: var(--text-muted); font-size: 11.5px; }
+.pairing-code-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.pairing-code { display: inline-flex; align-items: center; gap: 10px; padding: 12px 18px; border: 1px dashed rgba(169, 115, 255, .45); border-radius: 14px; background: rgba(0, 0, 0, .32); font-family: var(--mono); font-size: clamp(20px, 5vw, 30px); font-weight: 600; letter-spacing: .22em; color: #f2e7ff; }
+.light-theme .pairing-code { color: #3c1275; background: rgba(255, 255, 255, .75); }
+.pairing-empty { padding: 16px; border: 1px dashed var(--border); border-radius: 14px; color: var(--text-secondary); font-size: 12.5px; text-align: center; }
+.pairing-progress { display: flex; align-items: center; gap: 10px; color: var(--text-muted); font-size: 11.5px; }
+.pairing-progress .track { position: relative; width: 110px; height: 5px; overflow: hidden; border-radius: 99px; background: rgba(255, 255, 255, .1); }
+.pairing-progress .fill { position: absolute; inset: 0 auto 0 0; width: var(--pairing-progress, 100%); border-radius: 99px; background: linear-gradient(90deg, var(--purple-bright), var(--green)); transition: width 1s linear; }
+.pairing-steps { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; color: var(--text-secondary); font-size: 12.5px; }
+.pairing-steps li { display: flex; gap: 9px; align-items: flex-start; }
+.pairing-steps b { color: var(--text); }
+.pairing-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.pairing-wa-note { padding: 11px 13px; border-left: 2px solid var(--green); border-radius: 10px; color: var(--text-secondary); background: var(--green-tint); font-size: 12px; }
+.pairing-wa-note code { color: #d9f5e6; }
+
+/* ── Diálogo de confirmación propio (sin window.confirm) ───────── */
+.confirm-card { display: grid; gap: 14px; }
+.confirm-card .confirm-icon { display: grid; width: 46px; height: 46px; place-items: center; border-radius: 14px; color: var(--red); background: rgba(255, 89, 97, .12); }
+.confirm-card h2 { margin: 0; font-size: 19px; }
+.confirm-card p { margin: 0; color: var(--text-secondary); font-size: 13px; }
+.confirm-card .confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+/* ── Indicador de conexión en vivo (SSE) ───────────────────────── */
+.live-chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border: 1px solid var(--border); border-radius: 99px; color: var(--text-secondary); background: rgba(255, 255, 255, .03); font-size: 11px; font-weight: 600; }
+.live-chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); }
+.live-chip.is-live { color: #cfeee0; border-color: rgba(41, 201, 120, .32); }
+.live-chip.is-live .dot { background: var(--green); box-shadow: 0 0 9px rgba(41, 201, 120, .85); animation: live-blip 2.4s ease-out infinite; }
+.live-chip.is-off { color: #ffd9db; border-color: rgba(255, 89, 97, .3); }
+.live-chip.is-off .dot { background: var(--red); }
+@keyframes live-blip { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* ── Detalles de comodidad ─────────────────────────────────────── */
+.toast-stack .toast { animation: toast-in .24s var(--ease); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+.skeleton { position: relative; overflow: hidden; border-radius: var(--radius-sm); background: rgba(255, 255, 255, .045); }
+.skeleton::after { position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .07), transparent); content: ''; animation: shimmer 1.4s infinite; }
+@keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+.copied-flash { animation: copied .5s ease; }
+@keyframes copied { 0% { transform: scale(1); } 45% { transform: scale(1.14); } 100% { transform: scale(1); } }
+.copy-feedback { display: inline-flex; align-items: center; gap: 7px; color: var(--green); font-size: 12px; }
+.help-key { display: inline-flex; min-width: 20px; justify-content: center; padding: 1px 6px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-secondary); background: rgba(255, 255, 255, .04); font-family: var(--mono); font-size: 11px; }
+@media (max-width: 640px) {
+  .pairing-code { font-size: 21px; letter-spacing: .16em; }
+  .pairing-actions .glow-btn, .pairing-actions .btn { flex: 1 1 auto; }
+}
+
+/* Estado «en línea» y botón de peligro (para el diálogo de confirmación). */
+.status-badge.status-online { color: #d7f7e6; border-color: rgba(41, 201, 120, .34); background: rgba(41, 201, 120, .12); }
+.status-badge.status-online .pulse-dot { background: var(--green); }
+.btn-danger { border-color: rgba(255, 89, 97, .4); color: #ffd9db; background: rgba(255, 89, 97, .12); }
+.btn-danger:hover { border-color: rgba(255, 89, 97, .7); color: #fff; background: rgba(255, 89, 97, .24); }

@@ -998,7 +998,9 @@ export function unknownCommand({ command, suggestion = null }) {
 }
 
 /** Clave de activación generada por `.key` (flujo del panel web). */
-export function activationKey({ key, expiresInMin = 10, instanceName = null }) {
+export function activationKey({ key, expiresInMin = 10, instanceName = null, pairingCodes = [], linking = [] }) {
+  const codes = Array.isArray(pairingCodes) ? pairingCodes.filter((row) => row?.formatted) : [];
+  const pendientes = Array.isArray(linking) ? linking : [];
   return [
     `${SYM.bracketL} ${SYM.star} ${SYM.bracketR} ㅤ𝐶𝑙𝑎𝑣𝑒 ㅤ𝑑𝑒 ㅤ𝑎𝑐𝑡𝑖𝑣𝑎𝑐𝑖𝑜́𝑛`,
     RULE.night,
@@ -1007,6 +1009,25 @@ export function activationKey({ key, expiresInMin = 10, instanceName = null }) {
     '',
     `ㅤ${SYM.scroll}ㅤPégala en el panel web para activar el bot.`,
     `ㅤ${SYM.leaf}ㅤCaduca en ${expiresInMin} min · un solo uso.`,
+    ...codes.map(
+      (row) => [
+        '',
+        `ㅤ${SYM.bracketL} 🔑 ${SYM.bracketR} ㅤ𝑃𝑎𝑖𝑟𝑖𝑛𝑔 ㅤ𝑐𝑜𝑑𝑒 ㅤ𝑟𝑒𝑎𝑙`,
+        `ㅤ${SYM.leaf}ㅤBot ㅤ⁙ㅤ ${row.name} ${row.phoneMasked ? `(${row.phoneMasked})` : ''}`,
+        `ㅤ${SYM.chain}ㅤCódigo ㅤ⁙ㅤ ${row.formatted}`,
+        `ㅤ${SYM.arrow}ㅤEn ese teléfono: WhatsApp › Dispositivos vinculados ›`,
+        `ㅤㅤVincular con el número de teléfono.`,
+        `ㅤ${SYM.leaf}ㅤCaduca en ~${Math.max(1, Number(row.expiresInSec ?? 60))} s · pide otro con ${inlineCmd('pairing')}`,
+      ].join('\n')
+    ),
+    !codes.length && pendientes.length
+      ? [
+          '',
+          `ㅤ${SYM.chain}ㅤVinculación en marcha: ${pendientes.map((row) => row.name).join(', ')}.`,
+          `ㅤ${SYM.leaf}ㅤPide el código con ${inlineCmd('pairing')} en unos segundos.`,
+        ].join('\n')
+      : null,
+    '',
     `ㅤ${SYM.leaf}ㅤTambién sirve ㅤ${inlineCmd('key')} ㅤcon # - + . /`,
     RULE.night,
     `ㅤ${KAOMOJI.sparkle}`,
@@ -1014,6 +1035,41 @@ export function activationKey({ key, expiresInMin = 10, instanceName = null }) {
     .filter(Boolean)
     .join('\n');
 }
+
+/** Pairing code REAL de WhatsApp pedido con `.pairing`. */
+export function pairingCodeCard({ pairingCodes = [], linking = [] }) {
+  const codes = Array.isArray(pairingCodes) ? pairingCodes.filter((row) => row?.formatted) : [];
+  if (!codes.length) {
+    const pendientes = Array.isArray(linking) && linking.length ? linking.map((row) => row.name).join(', ') : null;
+    return [
+      `${SYM.bracketL} 🔑 ${SYM.bracketR} ㅤ𝑆𝑖𝑛 ㅤ𝑐𝑜́𝑑𝑖𝑔𝑜 ㅤ𝑝𝑒𝑛𝑑𝑖𝑒𝑛𝑡𝑒`,
+      RULE.chain,
+      pendientes
+        ? `ㅤ${SYM.chain}ㅤHay una vinculación en marcha (${pendientes}).`
+        : `ㅤ${SYM.chain}ㅤAhora mismo ningún sub-bot está vinculándose por código.`,
+      `ㅤ${SYM.leaf}ㅤCrea el bot en el panel y pulsa "Generar vinculación".`,
+      `ㅤ${SYM.leaf}ㅤDespués pide el código aquí con ${inlineCmd('pairing')}.`,
+      RULE.chain,
+      `ㅤ${KAOMOJI.serious}`,
+    ].join('\n');
+  }
+
+  return [
+    `${SYM.bracketL} 🔑 ${SYM.bracketR} ㅤ𝑃𝑎𝑖𝑟𝑖𝑛𝑔 ㅤ𝑐𝑜𝑑𝑒`,
+    RULE.night,
+    ...codes.flatMap((row) => [
+      `ㅤ${SYM.leaf}ㅤBot ㅤ⁙ㅤ ${row.name} ${row.phoneMasked ? `(${row.phoneMasked})` : ''}`,
+      `ㅤ${SYM.scroll}ㅤCódigo ㅤ⁙ㅤ ${row.formatted}`,
+      `ㅤ${SYM.arrow}ㅤEn ese teléfono: WhatsApp › Dispositivos vinculados ›`,
+      `ㅤㅤVincular con el número de teléfono ㅤ${SYM.leaf}ㅤcaduca en ~${Math.max(1, Number(row.expiresInSec ?? 60))} s`,
+      '',
+    ]),
+    `ㅤ${SYM.leaf}ㅤ¿Ya lo usaste? Pide otro con ${inlineCmd('pairing')}`,
+    RULE.night,
+    `ㅤ${KAOMOJI.wink}`,
+  ].join('\n');
+}
+
 
 /** El bot existe pero está SIN ACTIVAR: solo responde `.key`. */
 export function botInactive({ instanceName = null } = {}) {

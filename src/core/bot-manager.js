@@ -11,9 +11,13 @@ import fs from 'node:fs';
 import { env } from '../config/env.js';
 import { BotClient } from './bot-client.js';
 import { instancesRepo, groupsRepo, auditRepo, activationKeysRepo, normalizePrefix } from '../db/index.js';
+import { maskPhone } from '../utils/ids.js';
 import { scoped } from './logger.js';
 
 const log = scoped('manager');
+
+/** `ABCD1234` → `ABCD-1234` (así lo muestra WhatsApp). */
+const formatPairing = (code) => (code ? `${String(code).slice(0, 4)}-${String(code).slice(4, 8)}` : null);
 
 /** Validación de número internacional (sin "+"): 8 a 20 dígitos. */
 export function normalizePhone(input) {
@@ -24,11 +28,28 @@ export function normalizePhone(input) {
   return { ok: true, value: digits };
 }
 
+/* ── registro del manager activo ────────────────────────────────
+ * El comando `.key` (y `.pairing`) necesita ver los pairing codes
+ * REALES de los sub-bots que están vinculándose, sin importar qué bot
+ * de la plataforma haya recibido el mensaje.
+ */
+let activeManager = null;
+
+export function setActiveManager(manager) {
+  activeManager = manager ?? null;
+  return activeManager;
+}
+
+export function getActiveManager() {
+  return activeManager;
+}
+
 export { normalizePrefix };
 
 export class BotManager extends EventEmitter {
   constructor({ maxInstances = env.maxInstances } = {}) {
     super();
+    setActiveManager(this); // `.key` / `.pairing` consultan este manager
     this.setMaxListeners(40);
     this.maxInstances = Math.min(3, Math.max(1, maxInstances));
     /** @type {Map<string, BotClient>} */
@@ -219,6 +240,87 @@ export class BotManager extends EventEmitter {
     if (!client.pairingMode) return { ok: false, error: 'Este sub-bot se vincula por QR, no por código.' };
     const code = await client.refreshPairingCode();
     return code ? { ok: true, code } : { ok: false, error: 'WhatsApp no devolvió un código nuevo.' };
+  }
+
+  /**
+   * Pide a WhatsApp un pairing code REAL para un sub-bot en vinculación.
+   * Reutiliza el vigente si todavía sirve (WhatsApp los invalida a ~60 s).
+   */
+  async ensurePairingCode(id, options = {}) {
+    const instance = instancesRepo.byId(id);
+    if (!instance) return { ok: false, error: 'Ese sub-bot no existe.' };
+    const client = this.clients.get(id);
+    if (!client) return { ok: false, error: 'La sesión de vinculación no está abierta. Pulsa "Generar vinculación" en el panel.' };
+    const result = await client.ensurePairingCode(options);
+    if (!result.ok) return { ok: false, error: result.reason };
+    return {
+      ok: true,
+      id,
+      name: instance.name,
+      code: result.code,
+      formatted: formatPairing(result.code),
+      issuedAt: result.issuedAt ?? null,
+      ageSec: result.issuedAt ? Math.round((Date.now() - result.issuedAt) / 1000) : 0,
+      expiresInSec: Math.max(0, Math.round(env.qrTimeoutMs / 1000) - (result.issuedAt ? Math.round((Date.now() - result.issuedAt) / 1000) : 0)),
+      cached: Boolean(result.cached),
+    };
+  }
+
+  /**
+   * Pairing codes REALES pendientes de todos los sub-bots en vinculación.
+   * Es lo que el bot entrega por WhatsApp cuando escribes `.key`.
+   */
+  pendingPairingCodes({ phone = null, onlyFresh = true } = {}) {
+    const digits = phone ? String(phone).replace(/[^\d]/g, '') : null;
+    const rows = [];
+    for (const row of instancesRepo.all()) {
+      const client = this.clients.get(row.id);
+      const pairingMode = (client?.pairingMode ?? row.pairing_mode === 'pairing');
+      if (!pairingMode) continue;
+      const status = client?.status ?? row.status;
+      if (status === 'open') continue;
+      const code = client?.pairingCode ?? null;
+      const issuedAt = client?.pairingCodeAt ?? null;
+      const ageMs = issuedAt ? Date.now() - issuedAt : null;
+      if (onlyFresh && (!code || ageMs == null || ageMs > 60_000)) continue;
+      rows.push({
+        id: row.id,
+        name: row.name,
+        phone: row.phone,
+        phoneMasked: maskPhone(row.phone),
+        status,
+        activated: Boolean(row.activated),
+        live: Boolean(client),
+        code,
+        formatted: formatPairing(code),
+        ageSec: ageMs == null ? null : Math.round(ageMs / 1000),
+        expiresInSec: ageMs == null ? null : Math.max(0, 60 - Math.round(ageMs / 1000)),
+        isOwnNumber: Boolean(digits && String(row.phone).replace(/[^\d]/g, '') === digits),
+      });
+    }
+    // primero el sub-bot cuyo número coincide con quien pregunta
+    rows.sort((a, b) => Number(b.isOwnNumber) - Number(a.isOwnNumber));
+    return rows;
+  }
+
+  /** Sub-bots en vinculación (aunque todavía no tengan código generado). */
+  linkingInstances() {
+    return instancesRepo
+      .all()
+      .map((row) => {
+        const client = this.clients.get(row.id);
+        return {
+          id: row.id,
+          name: row.name,
+          phoneMasked: maskPhone(row.phone),
+          pairingMode: client?.pairingMode ?? row.pairing_mode === 'pairing',
+          status: client?.status ?? row.status,
+          live: Boolean(client),
+          activated: Boolean(row.activated),
+          hasCode: Boolean(client?.pairingCode),
+        };
+      })
+      .filter((row) => ['starting', 'connecting', 'qr', 'pairing'].includes(String(row.status)));
   }
 
   /** Cambia el prefijo de comandos del sub-bot (# - + . /). */
