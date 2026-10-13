@@ -9,6 +9,7 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import QRCode from 'qrcode';
+import { BotClient } from '../src/core/bot-client.js';
 
 import { createWebServer } from '../web/server.js';
 import { formatPairingCode } from '../web/routes.js';
@@ -95,18 +96,20 @@ test('crea sub-bots hasta el límite de 3 y no permite duplicar número', async 
   assert.equal(uno.status, 201);
   assert.equal(uno.data.instance.pairingMode, 'qr');
   assert.equal(uno.data.instance.prefix, '#', 'el prefijo elegido queda guardado');
-  assert.equal(uno.data.instance.activated, false, 'el bot nace SIN ACTIVAR');
+  assert.equal(uno.data.instance.activated, true, 'no necesita clave de activación');
+  assert.equal(uno.data.instance.autostart, false);
+  assert.equal(uno.data.instance.status, 'created');
   assert.ok(uno.data.instance.phoneMasked.includes('•'), 'la lista no muestra el número crudo');
 
   const dos = await api('/api/instances', { method: 'POST', body: { name: 'Versova Pairing', phone: '5215520000002', pairingMode: 'pairing', prefix: '+' } });
   assert.equal(dos.status, 201);
   assert.equal(dos.data.instance.pairingMode, 'pairing');
   assert.equal(dos.data.instance.prefix, '+');
-  assert.equal(dos.data.instance.activated, false);
+  assert.equal(dos.data.instance.activated, true);
 
   const llena = await api('/api/instances');
   assert.equal(llena.data.instances.length, 3, 'tres sub-bots como máximo');
-  assert.ok(llena.data.instances.filter((i) => !i.activated).length >= 2, 'creados = desconectados y sin activar');
+  assert.ok(llena.data.instances.every((i) => i.activated), 'todos habilitados sin clave');
 
   const duplicado = await api('/api/instances', { method: 'POST', body: { name: 'Repetido', phone: '5215520000001', pairingMode: 'qr' } });
   assert.equal(duplicado.status, 400);
@@ -134,37 +137,48 @@ test('el prefijo se valida y se puede cambiar (# - + . /)', async () => {
   assert.match(invalido.data.error, /prefijo/i);
 });
 
-test('activar un bot exige la clave real de .key', async () => {
+test('el endpoint antiguo de activación acepta peticiones sin clave', async () => {
   const { data: lista } = await api('/api/instances');
-  const target = lista.instances.find((i) => !i.activated);
-  assert.ok(target, 'hay un bot sin activar');
+  const target = lista.instances[0];
+  instancesRepo.setActivated(target.id, false);
+  const result = await api(`/api/instances/${target.id}/activate`, { method: 'POST', body: {} });
+  assert.equal(result.status, 200);
+  assert.equal(result.data.instance.activated, true);
+  const repeated = await api(`/api/instances/${target.id}/activate`, { method: 'POST' });
+  assert.equal(repeated.status, 200);
+  assert.equal(repeated.data.already, true);
+  const missing = await api('/api/instances/no-existe/activate', { method: 'POST' });
+  assert.equal(missing.status, 400);
+});
 
-  const sinClave = await api(`/api/instances/${target.id}/activate`, { method: 'POST', body: {} });
-  assert.equal(sinClave.status, 400);
-
-  const claveFalsa = await api(`/api/instances/${target.id}/activate`, { method: 'POST', body: { key: 'AAAA-0000' } });
-  assert.equal(claveFalsa.status, 400);
-  assert.match(claveFalsa.data.error, /clave|key/i);
-
-  // clave real: la genera el bot con `.key` y se guarda en la BD
-  const { activationKeysRepo } = await import('../src/db/index.js');
-  const created = activationKeysRepo.create({ creatorJid: '5215500000001@s.whatsapp.net' });
-  assert.match(created.formatted, /^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
-
-  const ok = await api(`/api/instances/${target.id}/activate`, { method: 'POST', body: { key: created.formatted } });
-  assert.equal(ok.status, 200);
-  assert.equal(ok.data.instance.activated, true, 'con la clave válida el bot queda activado');
-  assert.equal(ok.data.instance.autostart, true, 'al activarse arranca solo en reinicios');
-
-  const reuso = await api(`/api/instances/${target.id}/activate`, { method: 'POST', body: { key: created.formatted } });
-  // ya está activado → ok sin consumir; pero si se insiste con otra instancia falla
-  const { data: lista2 } = await api('/api/instances');
-  const otro = lista2.instances.find((i) => !i.activated);
-  if (otro) {
-    const reusoReal = await api(`/api/instances/${otro.id}/activate`, { method: 'POST', body: { key: created.formatted } });
-    assert.equal(reusoReal.status, 400, 'una clave no se puede usar dos veces');
+test('el panel obtiene QR y pairing directamente, sin enviar .key', async (t) => {
+  // Solo se sustituye el transporte externo de WhatsApp.
+  t.mock.method(BotClient.prototype, 'start', async function () {
+    this.status = this.pairingMode ? 'pairing' : 'qr';
+    this.qr = this.pairingMode ? null : 'qr-de-prueba';
+    this.pairingCode = this.pairingMode ? 'ABCD1234' : null;
+    this.pairingCodeAt = this.pairingMode ? Date.now() : null;
+  });
+  t.mock.method(BotClient.prototype, 'ensurePairingCode', async function () {
+    return { ok: true, code: this.pairingCode, issuedAt: this.pairingCodeAt };
+  });
+  const { data: lista } = await api('/api/instances');
+  const qr = lista.instances.find((i) => i.name === 'Versova QR');
+  const pairing = lista.instances.find((i) => i.pairingMode === 'pairing');
+  try {
+    const started = await api(`/api/instances/${qr.id}/start`, { method: 'POST' });
+    assert.equal(started.status, 200);
+    const link = await api(`/api/instances/${qr.id}/link`);
+    assert.equal(link.data.qr, 'qr-de-prueba');
+    assert.match(link.data.qrDataUrl, /^data:image/);
+    const code = await api(`/api/instances/${pairing.id}/pairing`, { method: 'POST' });
+    assert.equal(code.status, 200);
+    assert.equal(code.data.formatted, 'ABCD-1234');
+    assert.equal(instancesRepo.byId(pairing.id).autostart, 1);
+  } finally {
+    manager.clients.delete(qr.id);
+    manager.clients.delete(pairing.id);
   }
-  assert.equal(reuso.status, 200);
 });
 
 test('el estado de vinculación existe aunque el sub-bot esté apagado', async () => {

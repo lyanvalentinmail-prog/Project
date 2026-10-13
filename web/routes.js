@@ -295,13 +295,9 @@ export function createRouter({ manager, auth }) {
     return res.json({ ok: true, instance: publicInstance(instancesRepo.byId(req.params.id)) });
   });
 
-  /** Activa el sub-bot con la clave entregada por `.key` en WhatsApp. */
+  /** Endpoint antiguo: habilita sin clave, no sustituye la vinculación de WhatsApp. */
   router.post('/instances/:id/activate', (req, res) => {
-    const { key } = req.body ?? {};
-    if (!key || !String(key).trim()) {
-      return res.status(400).json({ ok: false, error: 'Escribe la clave que te dio el bot con el comando .key.' });
-    }
-    const result = manager.activate(req.params.id, key);
+    const result = manager.activate(req.params.id);
     if (!result.ok) return res.status(400).json({ ok: false, error: result.error });
     return res.json({ ok: true, instance: publicInstance(result.instance), already: Boolean(result.already) });
   });

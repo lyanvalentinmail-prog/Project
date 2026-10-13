@@ -10,7 +10,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { env } from '../config/env.js';
 import { BotClient } from './bot-client.js';
-import { instancesRepo, groupsRepo, auditRepo, activationKeysRepo, normalizePrefix } from '../db/index.js';
+import { instancesRepo, groupsRepo, auditRepo, normalizePrefix } from '../db/index.js';
 import { maskPhone } from '../utils/ids.js';
 import { scoped } from './logger.js';
 
@@ -101,8 +101,7 @@ export class BotManager extends EventEmitter {
   /* ── ciclo de vida ─────────────────────────────────────────── */
 
   /**
-   * Crea un sub-bot (máximo 3). Nace DESCONECTADO y SIN ACTIVAR:
-   * la activación exige la clave que el bot entrega con `.key` en WhatsApp.
+   * Crea un sub-bot habilitado (máximo 3), pendiente de vinculación.
    */
   createInstance({ name, phone, pairingMode = 'qr', prefix = '.' }) {
     const phoneCheck = normalizePhone(phone);
@@ -130,13 +129,13 @@ export class BotManager extends EventEmitter {
         pairingMode,
         sessionDir,
         prefix: prefixCheck.value,
-        activated: false,
+        activated: true,
         autostart: false,
       });
       auditRepo.log({
         instanceId: instance.id,
         action: 'instance.created',
-        detail: { name: cleanName, pairingMode, prefix: prefixCheck.value, activated: false },
+        detail: { name: cleanName, pairingMode, prefix: prefixCheck.value, activated: true },
       });
       return { ok: true, instance };
     } catch (error) {
@@ -145,25 +144,12 @@ export class BotManager extends EventEmitter {
     }
   }
 
-  /**
-   * Activa un sub-bot con la clave que el bot entregó con `.key` en WhatsApp.
-   * La clave se guarda en la base de datos al generarla y es de un solo uso.
-   */
-  activate(id, key) {
+  /** Compatibilidad con clientes antiguos: ya no se requiere ninguna clave. */
+  activate(id) {
     const instance = instancesRepo.byId(id);
     if (!instance) return { ok: false, error: 'Ese sub-bot no existe.' };
     if (instance.activated) return { ok: true, instance, already: true };
-
-    const redeemed = activationKeysRepo.redeem(key, id);
-    if (!redeemed.ok) return { ok: false, error: redeemed.reason };
-
     instancesRepo.setActivated(id, true);
-    instancesRepo.setAutostart(id, true);
-    auditRepo.log({
-      instanceId: id,
-      action: 'instance.activated',
-      detail: { name: instance.name, keyId: redeemed.row?.id ?? null },
-    });
     return { ok: true, instance: instancesRepo.byId(id) };
   }
 
@@ -187,6 +173,7 @@ export class BotManager extends EventEmitter {
 
     try {
       await client.start();
+      instancesRepo.setAutostart(id, true);
       instancesRepo.setStatus(id, client.status);
       auditRepo.log({ instanceId: id, action: 'instance.start', detail: { pairingMode: instance.pairing_mode } });
       return { ok: true, client: client.snapshot() };
@@ -336,10 +323,10 @@ export class BotManager extends EventEmitter {
 
   /* ── arranque global ───────────────────────────────────────── */
 
-  /** Arranca las instancias activadas con autostart (los bots nacen desconectados). */
+  /** Arranca las instancias con autostart (los bots nacen desconectados). */
   async startAll() {
     this.started = true;
-    const instances = instancesRepo.all().filter((i) => i.autostart && i.activated);
+    const instances = instancesRepo.all().filter((i) => i.autostart);
     const results = [];
     for (const instance of instances) {
       // eslint-disable-next-line no-await-in-loop

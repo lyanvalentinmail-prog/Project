@@ -61,7 +61,7 @@ async function main() {
   if (withBot) {
     const results = await manager.startAll();
     if (!results.length) {
-      banner.warn('No hay sub-bots activados. Abre el panel web, crea uno y actívalo con la clave de .key.');
+      banner.warn('No hay sub-bots con inicio automático. Abre el panel web y vincula uno con WhatsApp.');
     }
     for (const result of results) {
       if (result.ok) banner.ok(`Sub-bot "${result.client?.name ?? result.id}" iniciado → ${result.client?.status}`);

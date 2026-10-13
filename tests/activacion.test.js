@@ -1,9 +1,4 @@
-/**
- * Tests · activación de sub-bots con `.key` + prefijos por bot
- * ────────────────────────────────────────────────────────────────
- * Flujo real: el bot nace desconectado/sin activar, `.key` en WhatsApp
- * entrega una clave de un solo uso y el panel la canjea para activarlo.
- */
+/** Pruebas de vinculación sin clave y prefijos por bot. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -14,20 +9,12 @@ import { BotManager, normalizePhone } from '../src/core/bot-manager.js';
 
 /* ── comando `.key` ──────────────────────────────────────────── */
 
-test('.key devuelve una clave de activación con formato ABCD-1234', async () => {
+test('.key es un alias opcional de pairing y no inventa claves', async () => {
   const who = person('KeyUser');
-  const { all } = await say(who.jid, '.key');
-  assert.ok(includes({ all }, 'clave'), `responde con la clave: ${plain(all)}`);
-  const match = plain(all).match(/[A-Z2-9]{4}-[A-Z2-9]{4}/);
-  assert.ok(match, `la clave tiene formato XXXX-XXXX: ${plain(all)}`);
-  assert.ok(activationKeysRepo.findValid(match[0]), 'la clave queda guardada en la BD');
-});
-
-test('.key funciona con cualquiera de los prefijos permitidos (# - + . /)', async () => {
-  const who = person('KeyUser2');
-  for (const prefix of ['#', '-', '+', '/']) {
-    const { all } = await say(who.jid, `${prefix}key`);
-    assert.ok(includes({ all }, 'clave'), `responde a ${prefix}key: ${plain(all)}`);
+  for (const prefix of ['.', '#', '-', '+', '/']) {
+    const response = await say(who.jid, `${prefix}key`);
+    assert.match(plain(response.all), /pairing|vincul/i);
+    assert.ok(!/[A-Z2-9]{4}-[A-Z2-9]{4}/.test(plain(response.all)));
   }
 });
 
@@ -63,24 +50,20 @@ test('.pairing funciona con cualquier prefijo (# - + . /)', async () => {
 
 /* ── bot sin activar ─────────────────────────────────────────── */
 
-test('un bot sin activar solo responde .key y avisa cómo activarlo', async () => {
+test('un bot antiguo sin activar ya responde a los comandos', async () => {
   const instance = instancesRepo.all()[0];
   instancesRepo.setActivated(instance.id, false);
-  const who = person('InactiveUser');
-
-  const bloqueado = await say(who.jid, '.menu');
-  assert.ok(includes(bloqueado, 'sin activar'), `avisa que falta activar: ${plain(bloqueado.all)}`);
-  assert.ok(includes(bloqueado, 'key'), 'explica el comando .key');
-
-  const todavia = await say(who.jid, '.reg Nombre.20');
-  assert.ok(includes(todavia, 'sin activar'), 'otros comandos quedan bloqueados');
-
-  const key = await say(who.jid, '.key');
-  assert.ok(includes(key, 'clave'), '.key sigue funcionando para activar');
-
-  instancesRepo.setActivated(instance.id, true);
-  const ok = await say(who.jid, '.menu');
-  assert.ok(includes(ok, 'Menu') || includes(ok, 'menú') || includes(ok, 'REGISTRO'), `con la clave el bot responde: ${plain(ok.all).slice(0, 80)}`);
+  try {
+    const who = person('DirectUser');
+    const menu = await say(who.jid, '.menu');
+    assert.ok(!includes(menu, 'sin activar'));
+    assert.match(plain(menu.all), /menu|menú|registro/i);
+    const registro = await say(who.jid, '.reg DirectUser.20');
+    assert.ok(!includes(registro, 'sin activar'));
+    assert.match(plain(registro.all), /DirectUser/);
+  } finally {
+    instancesRepo.setActivated(instance.id, true);
+  }
 });
 
 /* ── prefijos por bot ────────────────────────────────────────── */
@@ -115,28 +98,35 @@ test('el prefijo del bot se puede cambiar y queda en la BD', () => {
 
 /* ── activación completa (BD) ────────────────────────────────── */
 
-test('canje de clave: un solo uso, vinculada a la instancia', () => {
+test('compatibilidad: habilita instancias antiguas sin clave y sin arrancarlas', () => {
   const instance = instancesRepo.all()[0];
   instancesRepo.setActivated(instance.id, false);
   instancesRepo.setAutostart(instance.id, false);
+  const manager = new BotManager();
+  const result = manager.activate(instance.id);
+  assert.equal(result.ok, true);
+  assert.equal(result.instance.activated, 1);
+  assert.equal(result.instance.autostart, 0);
+  assert.equal(manager.activate(instance.id).already, true);
+  assert.equal(manager.activate('no-existe').ok, false);
+});
 
-  const created = activationKeysRepo.create({ creatorJid: '5215599999999@s.whatsapp.net' });
-  assert.ok(created.formatted, 'clave generada');
-
-  const manager = new BotManager({ maxInstances: 3 });
-  const activado = manager.activate(instance.id, created.formatted);
-  assert.equal(activado.ok, true);
-  const row = instancesRepo.byId(instance.id);
-  assert.equal(row.activated, 1, 'activado tras canjear la clave');
-  assert.equal(row.autostart, 1, 'arrancará solo en los reinicios');
-
-  const other = instancesRepo.all()[0];
-  instancesRepo.setActivated(other.id, false);
-  const otra = activationKeysRepo.create({ creatorJid: '5215588888888@s.whatsapp.net' });
-  activationKeysRepo.redeem(otra.formatted, 'instancia-x');
-  const reuso = manager.activate(other.id, otra.formatted);
-  assert.equal(reuso.ok, false, 'una clave usada no vuelve a servir');
-  assert.match(reuso.error, /usada/i);
+test('startAll respeta autostart, no la antigua clave de activación', async (t) => {
+  const instance = instancesRepo.all()[0];
+  instancesRepo.setActivated(instance.id, false);
+  instancesRepo.setAutostart(instance.id, true);
+  const manager = new BotManager();
+  const start = t.mock.method(manager, 'start', async () => ({ ok: true }));
+  try {
+    await manager.startAll();
+    assert.deepEqual(start.mock.calls.map((call) => call.arguments[0]), [instance.id]);
+    instancesRepo.setAutostart(instance.id, false);
+    start.mock.resetCalls();
+    await manager.startAll();
+    assert.equal(start.mock.callCount(), 0);
+  } finally {
+    instancesRepo.setActivated(instance.id, true);
+  }
 });
 
 test('las estadísticas cuentan comandos reales', () => {

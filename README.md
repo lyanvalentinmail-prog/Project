@@ -69,23 +69,20 @@ Al arrancar verás algo así:
 Base de datos  ⁙ data/versova.db
 Comandos       ⁙ 54 registrados
 Panel web      ⁙ http://localhost:3000
-⚠ No hay sub-bots activados. Abre el panel web, crea uno y actívalo con la clave de .key.
+⚠ No hay sub-bots con inicio automático. Abre el panel web y vincula uno con WhatsApp.
 ```
 
 ---
 
-## 𓆩 ♡ 𓆪 Crear, activar y vincular un bot
+## 𓆩 ♡ 𓆪 Crear y vincular un bot
 
 1. Abre el panel: **http://localhost:3000** (en un servidor remoto, el puerto 3000).
    **No hay contraseña**: el panel está abierto por diseño.
 2. En **Registrar bot**: nombre, **prefijo de comandos** (`#` `-` `+` `.` `/`),
    número internacional sin `+` (ej. `5215512345678`) y método de vinculación.
    El bot se crea **desconectado**.
-3. **Actívalo con `.key`**: pulsa *Conectar en WhatsApp*, envía `.key` desde WhatsApp
-   a cualquier bot conectado de la plataforma y el bot te devuelve **dos cosas**:
-   tu clave de un solo uso (ej. `ABCD-2345`) **y el pairing code REAL** que WhatsApp
-   acaba de emitir para el número que estás vinculando. Pega la clave en el panel →
-   **Activar bot**.
+3. Pulsa **Conectar en WhatsApp**. El panel obtiene directamente el QR o código de
+   vinculación. **No necesitas enviar `.key` ni pegar una clave de activación.**
 4. **Vincula el número**: los QR y pairing codes son **reales** (los emite WhatsApp).
    - **QR** → se muestra en la ventana y se renueva solo; escanéalo en
      *WhatsApp → Ajustes → Dispositivos vinculados → Vincular un dispositivo*.
@@ -96,6 +93,9 @@ Panel web      ⁙ http://localhost:3000
      renueva solo y `.pairing` te da otro al momento.
 5. Cuando el estado pase a **en línea**, añade el bot a tu grupo de rol y escribe
    `«prefijo»menu` (ej. `.menu` o `#menu` según el prefijo elegido).
+
+Los bots antiguos también quedan habilitados al actualizar. Se conserva su configuración
+de inicio automático; los bots detenidos no se arrancan por la migración.
 
 ### 𓆩 ✨ 𓆪 Panel web sin parpadeos
 
@@ -124,7 +124,7 @@ el detalle. Referencia completa en **[docs/COMANDOS.md](docs/COMANDOS.md)**.
 
 | Sección | Comandos |
 |---|---|
-| **Activación** | `.key` (clave de un solo uso **+ pairing code real**) · `.pairing` (solo el código) — funcionan con cualquier prefijo: `#key` `+key`… |
+| **Vinculación opcional por comando** | `.pairing` (pairing code real) · `.key` / `.clave` (alias) — funcionan con cualquier prefijo: `#key` `+key`… |
 | **Información** | `.menu` `.help` `.ping` `.botinfo` `.owner` |
 | **Registro** | `.reg <nombre.edad>` `.unreg` `.editar <nombre.edad>` `.ficha` |
 | **Personajes** | `.rol <personaje>` `.cambiarol <personaje>` `.roles` `.mirol` `.reservar <personaje>` `.reservas` `.liberarreserva` `.liberar` `.cancelarsolicitud` |
@@ -225,7 +225,7 @@ de diseño y la API web completa (auth, sub-bots, grupos, solicitudes, SSE, est�
 8. Confirmación obligatoria en `.unreg`, `.liberar`, `.terminar`, `.expulsar` y `.ban`.
 9. Anti-spam: 6 comandos/10 s, enfriamientos por comando y bloqueo temporal de 30 s.
 10. `sessions/`, `data/`, `logs/` y `.env` fuera de git, con permisos `0700`;
-    la activación de bots exige la clave de un solo uso que entrega `.key`.
+    la vinculación requiere confirmar el QR o código desde el teléfono con WhatsApp.
 11. Los números de teléfono **nunca** aparecen completos en mensajes públicos (`52•••••••78`).
 12. Al salir del grupo se libera personaje, se rompen parejas, se cancelan solicitudes y
     se limpia el AFK; si la persona vuelve, su ficha se restaura.
@@ -280,8 +280,8 @@ Puedes desplegar VÉRSOVA en **Render de forma gratuita** con un solo clic usand
 3. En la pantalla de creación del Blueprint, introduce tu número en `OWNER_NUMBERS` (formato internacional sin `+`, ej. `5215512345678`).
 4. Haz clic en **Apply**. Render compilará e iniciará el bot y el panel web automáticamente.
 5. Al terminar el despliegue, abre la URL asignada por Render (ej. `https://versova-bot.onrender.com`).
-6. **Panel abierto:** el dashboard no pide contraseña. Cada bot se activa con la clave
-   de un solo uso que genera el comando `.key` desde WhatsApp.
+6. **Panel abierto:** el dashboard no pide contraseña. Cada bot queda listo al vincular
+   WhatsApp desde el panel, sin clave de activación.
 7. Inicia sesión en el panel, ve a **Sub-bots → Crear** y vincula tu número mediante **QR** o **Pairing Code**.
 
 ### ⚠ Consideraciones del plan gratuito de Render
