@@ -29,6 +29,7 @@ import { maskPhone } from '../src/utils/ids.js';
 import { formatDuration } from '../src/utils/time.js';
 import { createEndpointsRouter } from './api/index.js';
 import { createCreditsRouter } from './api/credits.js';
+import { PAIRING_CODE_TTL_MS } from '../src/core/bot-client.js';
 
 /** Formatea el código de emparejamiento como XXXX-XXXX. */
 export const formatPairingCode = (code) =>
@@ -320,9 +321,11 @@ export function createRouter({ manager, auth }) {
   });
 
   router.post('/instances/:id/pairing/refresh', async (req, res) => {
-    const result = await manager.refreshPairingCode(req.params.id);
+    // Sin force se devuelve el código vigente: regenerar lo invalidaría
+    // en WhatsApp mientras la persona lo está escribiendo en el teléfono.
+    const result = await manager.refreshPairingCode(req.params.id, { force: req.body?.force === true });
     if (!result.ok) return res.status(400).json({ ok: false, error: result.error });
-    return res.json({ ok: true, pairingCode: result.code, formatted: formatPairingCode(result.code) });
+    return res.json({ ok: true, pairingCode: result.code, formatted: formatPairingCode(result.code), cached: Boolean(result.cached) });
   });
 
   /**
@@ -396,8 +399,9 @@ export function createRouter({ manager, auth }) {
       pairingFormatted: formatPairingCode(snapshot.pairingCode),
       pairingCodeAt: snapshot.pairingCodeAt ?? null,
       pairingAgeSec,
-      // WhatsApp invalida el código ~60 s después de emitirlo
-      pairingExpiresInSec: pairingAgeSec == null ? null : Math.max(0, 60 - pairingAgeSec),
+      // WhatsApp solo acepta el código durante su vigencia (60 s, la
+      // misma constante que gobierna la reutilización en el cliente).
+      pairingExpiresInSec: snapshot.pairingCodeAt == null ? null : Math.max(0, Math.round((PAIRING_CODE_TTL_MS - (Date.now() - snapshot.pairingCodeAt)) / 1000)),
       lastError: snapshot.lastError ?? instance.last_error ?? null,
       jid: snapshot.jid ?? instance.wa_jid ?? null,
       pushName: snapshot.pushName ?? instance.push_name ?? null,
