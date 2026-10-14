@@ -84,6 +84,7 @@ export class BotClient extends EventEmitter {
     this.stopping = false;
     this.reconnectAttempts = 0;
     this.pairingRequested = false;
+    this._pairingReady = false;
     this.connectedAt = null;
     this.startedAt = Date.now();
 
@@ -129,6 +130,9 @@ export class BotClient extends EventEmitter {
    */
   _setStatus(status, extra = {}) {
     this.status = status;
+    if (['starting', 'connecting', 'closed', 'loggedOut', 'open', 'error'].includes(status)) {
+      extra = { ...extra, qr: null, pairingCode: null };
+    }
     if (extra.qr !== undefined) {
       this.qr = extra.qr;
       this.qrAt = extra.qr ? Date.now() : null;
@@ -166,6 +170,8 @@ export class BotClient extends EventEmitter {
     if (this.sock) return this.snapshot();
     this.stopping = false;
     this.pairingRequested = false;
+    this._pairingReady = false;
+    this._pairingRequest = null;
     this._setStatus('starting');
 
     fs.mkdirSync(this.sessionDir, { recursive: true, mode: 0o700 });
@@ -202,6 +208,8 @@ export class BotClient extends EventEmitter {
     this.stopping = true;
     const sock = this.sock;
     this.sock = null;
+    this._pairingReady = false;
+    this._pairingRequest = null;
     this._metadataCache.clear();
     if (!sock) {
       this._setStatus('closed', { error: reason });
@@ -237,23 +245,23 @@ export class BotClient extends EventEmitter {
 
   _bindEvents(sock) {
     sock.ev.on('creds.update', () => {
+      if (this.sock !== sock) return;
       this.saveCreds?.().catch((error) => log.error({ err: error }, 'no se pudieron guardar las credenciales'));
     });
 
     sock.ev.on('connection.update', async (update) => {
+      // Eventos tardíos de un socket anterior no pertenecen a esta sesión.
+      if (this.sock !== sock || this.stopping) return;
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
+        // El QR confirma que terminó el handshake. Antes de esto no se puede
+        // pedir el código, aunque el WebSocket ya exista.
+        this._pairingReady = true;
         this._setStatus(this.pairingMode ? 'pairing' : 'qr', { qr });
         if (this.pairingMode && !this.pairingRequested) {
-          this.pairingRequested = true;
-          try {
-            const code = await sock.requestPairingCode(this.phone.replace(/[^\d]/g, ''));
-            this._setStatus('pairing', { pairingCode: code, qr: null });
-            this.emit('log', { level: 'info', message: `pairing code generado: ${code}` });
-          } catch (error) {
-            this._setStatus('qr', { error: `No se pudo generar el pairing code: ${error?.message ?? error}` });
-          }
+          await this.refreshPairingCode();
+          if (this.sock !== sock || this.stopping) return;
         }
       }
 
@@ -277,6 +285,9 @@ export class BotClient extends EventEmitter {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         const message = lastDisconnect?.error?.message ?? 'conexión cerrada';
         this.connectedAt = null;
+        this.sock = null;
+        this._pairingReady = false;
+        this._pairingRequest = null;
 
         if (statusCode === DisconnectReason.loggedOut) {
           this._setStatus('loggedOut', { qr: null, pairingCode: null, error: 'Sesión cerrada desde el teléfono (loggedOut).' });
@@ -298,8 +309,7 @@ export class BotClient extends EventEmitter {
         const wait = Math.round(base * (0.85 + Math.random() * 0.3));
         this.emit('log', { level: 'info', message: `reconectando en ${Math.round(wait / 1000)}s (intento ${this.reconnectAttempts})` });
         await sleep(wait);
-        if (!this.stopping) {
-          this.sock = null;
+        if (!this.stopping && !this.sock) {
           this.start().catch((error) => {
             log.error({ err: error, id: this.id }, 'fallo al reconectar');
             this._setStatus('error', { error: String(error?.message ?? error) });
@@ -466,65 +476,86 @@ export class BotClient extends EventEmitter {
     return this.sock.groupFetchAllParticipating();
   }
 
-  /** Reintenta el pairing code si el usuario no lo usó a tiempo. */
+  /** Todas las rutas (QR inicial, panel y comandos) comparten una petición. */
   async refreshPairingCode() {
-    if (!this.pairingMode || !this.sock) return null;
-    // Una sola petición a la vez: WhatsApp limita cuántos códigos se piden.
+    const sock = this.sock;
+    if (!this.pairingMode || !sock || !this._pairingReady || this.stopping ||
+        this.status === 'open' || this.authState?.creds?.registered) return null;
     if (this._pairingRequest) return this._pairingRequest;
-    this._pairingRequest = (async () => {
-      this.pairingRequested = false;
+
+    this.pairingRequested = true;
+    // Renovar invalida el anterior incluso si WhatsApp rechaza la petición.
+    this._setStatus('pairing', { pairingCode: null, qr: null, error: null });
+    const request = (async () => {
+      // Reserva _pairingRequest antes de llamar a Baileys (puede emitir eventos).
+      await Promise.resolve();
       try {
-        const code = await this.sock.requestPairingCode(this.phone.replace(/[^\d]/g, ''));
-        if (code) this._setStatus('pairing', { pairingCode: code });
-        return code ?? null;
+        if (this.sock !== sock || this.stopping) return null;
+        const code = await sock.requestPairingCode(this.phone.replace(/[^\d]/g, ''));
+        if (this.sock !== sock || this.stopping || !this._pairingReady ||
+            this.status === 'open' || this.authState?.creds?.registered) return null;
+        if (!/^[A-Z0-9]{8}$/.test(code ?? '')) throw new Error('Respuesta de vinculación inválida.');
+        this._setStatus('pairing', { pairingCode: code, qr: null, error: null });
+        this.emit('log', { level: 'info', message: 'pairing code generado' });
+        return code;
       } catch (error) {
-        this._setStatus(this.status === 'open' ? 'open' : 'error', { error: `pairing code: ${error?.message ?? error}` });
+        if (this.sock === sock && !this.stopping && this.status !== 'open') {
+          this.pairingRequested = false;
+          this._setStatus('error', { error: `pairing code: ${error?.message ?? error}` });
+        }
         return null;
       } finally {
-        this._pairingRequest = null;
+        if (this._pairingRequest === request) this._pairingRequest = null;
       }
     })();
-    return this._pairingRequest;
+    this._pairingRequest = request;
+    return request;
   }
 
-  /** ¿El código actual sigue siendo utilizable? (WhatsApp los invalida ~60 s). */
+  /** Ventana local conservadora; la validez final la decide WhatsApp. */
   pairingCodeFresh(maxAgeMs = 45_000) {
-    if (!this.pairingCode || this.status === 'open') return false;
-    return this.pairingCodeAt != null && Date.now() - this.pairingCodeAt <= maxAgeMs;
+    if (!this.sock || !this._pairingReady || this.stopping || this.status !== 'pairing' ||
+        this.authState?.creds?.registered || !this.pairingCode) return false;
+    const age = Date.now() - this.pairingCodeAt;
+    return this.pairingCodeAt != null && age >= 0 && age <= Math.min(maxAgeMs, 60_000);
   }
 
-  /**
-   * Devuelve un pairing code REAL y utilizable: reutiliza el vigente o pide
-   * uno nuevo a WhatsApp y espera a tenerlo (`waitMs` como máximo).
-   */
+  /** Espera al handshake o a la petición compartida, sin devolver códigos viejos. */
   async ensurePairingCode({ waitMs = 12_000, maxAgeMs = 45_000, force = false } = {}) {
     if (!this.pairingMode) return { ok: false, reason: 'Este sub-bot se vincula por QR, no por código.' };
-    if (this.status === 'open') return { ok: false, reason: 'Ese sub-bot ya está vinculado con WhatsApp.' };
-    if (this.sock && !force && this.pairingCodeFresh(maxAgeMs)) {
+    if (this.status === 'open' || this.authState?.creds?.registered) {
+      return { ok: false, reason: 'Ese sub-bot ya está vinculado con WhatsApp.' };
+    }
+    if (!force && this.pairingCodeFresh(maxAgeMs)) {
       return { ok: true, code: this.pairingCode, issuedAt: this.pairingCodeAt, cached: true };
     }
-    if (!this.sock) {
+    if (!this.sock || this.stopping) {
       return { ok: false, reason: 'La sesión de vinculación no está abierta todavía. Genera la vinculación desde el panel.' };
     }
 
-    const pending = new Promise((resolve) => {
-      const onStatus = (snapshot) => {
-        if (snapshot?.pairingCode) {
-          this.off('status', onStatus);
-          clearTimeout(timer);
-          resolve({ ok: true, code: snapshot.pairingCode, issuedAt: snapshot.pairingCodeAt ?? Date.now(), cached: false });
+    const sock = this.sock;
+    const timeout = Number.isFinite(Number(waitMs)) ? Math.max(1, Math.min(Number(waitMs), 30_000)) : 12_000;
+    return new Promise((resolve) => {
+      const finish = (result) => {
+        this.off('status', onStatus);
+        clearTimeout(timer);
+        resolve(result);
+      };
+      const onStatus = () => {
+        if (this.sock !== sock || this.stopping || ['closed', 'loggedOut', 'open', 'error'].includes(this.status)) {
+          finish({ ok: false, reason: this.lastError || 'La sesión cambió. Vuelve a solicitar la vinculación.' });
+        } else if (this.pairingCodeFresh(maxAgeMs)) {
+          finish({ ok: true, code: this.pairingCode, issuedAt: this.pairingCodeAt, cached: false });
         }
       };
       const timer = setTimeout(() => {
-        this.off('status', onStatus);
-        resolve({ ok: false, reason: 'WhatsApp no devolvió el código a tiempo. Inténtalo otra vez en unos segundos.' });
-      }, waitMs);
-      timer.unref?.();
+        finish({ ok: false, reason: 'WhatsApp no devolvió el código a tiempo. Inténtalo otra vez en unos segundos.' });
+      }, timeout);
       this.on('status', onStatus);
+      // Si aún no llegó el QR, connection.update iniciará la petición.
+      // No esperar este await: el timeout también debe cubrir una red bloqueada.
+      void this.refreshPairingCode();
     });
-
-    await this.refreshPairingCode();
-    return pending;
   }
 
   /** ¿El bot es admin en este grupo? (consulta fresca) */

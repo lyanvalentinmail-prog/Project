@@ -436,7 +436,7 @@ function renderBotCard(instance) {
   const name = escapeHtml(instance.name || 'SubBot');
   const id = escapeHtml(instance.id || '');
   const phone = escapeHtml(instance.phoneMasked || 'Número oculto');
-  const mode = instance.pairingMode === 'pairing' ? 'Código de 8 dígitos' : 'Código QR';
+  const mode = instance.pairingMode === 'pairing' ? 'Código de 8 caracteres' : 'Código QR';
   const prefix = escapeHtml(instance.prefix || '.');
   return `<article class="card bot-card"><span class="bot-card-icon">${icon('bot')}</span><div class="bot-card-main"><div class="bot-card-title"><h3>${name}</h3><span class="status-badge ${status.className}"><i class="pulse-dot"></i>${status.label}</span></div><p>${phone}</p><div class="bot-card-meta"><span>${icon('hash')} prefijo <strong>${prefix}</strong></span><span>${icon('link')}${escapeHtml(mode)}</span><span>${icon('users')}${formatNumber(instance.groups || 0)} grupos</span><span>${icon('shield')}Sin clave de activación</span></div></div><div class="bot-card-actions"><button class="btn ${status.key === 'online' ? 'btn-outline' : 'btn-primary'} btn-small" type="button" data-action="open-connect" data-id="${id}">${icon('whatsapp')} Conectar en WhatsApp</button><button class="btn btn-outline btn-small" type="button" data-action="edit-instance" data-id="${id}">Editar</button>${status.key === 'online' ? `<button class="btn btn-outline btn-small" type="button" data-action="stop-instance" data-id="${id}">Detener</button>` : ''}<button class="btn btn-outline btn-small" type="button" data-action="delete-instance" data-id="${id}">Eliminar</button></div></article>`;
 }
@@ -469,12 +469,12 @@ function renderWizard() {
     title = 'Número y vinculación';
     description = 'Ingresa el número del bot y elige cómo vincularlo con WhatsApp.';
     const phoneValue = escapeHtml(flow.phone);
-    content = `<div class="wizard-form"><label class="field"><span class="field-label">Número del bot</span><input class="text-input" type="tel" inputmode="tel" name="flow-phone" data-flow="phone" value="${phoneValue}" placeholder="+57 301 944 8245" autocomplete="tel" /><span class="field-hint">WhatsApp enviará el código de vinculación a este número.</span></label><div class="field"><span class="field-label">Cómo quieres vincularlo</span><div class="pairing-methods"><button class="pairing-option ${flow.pairingMode === 'qr' ? 'is-selected' : ''}" type="button" data-action="select-method" data-method="qr"><span class="pairing-option-icon">${icon('qr')}</span><span><strong>Código QR</strong><small>Escaneas un código desde el dispositivo del bot.</small></span></button><button class="pairing-option ${flow.pairingMode === 'pairing' ? 'is-selected' : ''}" type="button" data-action="select-method" data-method="pairing"><span class="pairing-option-icon">${icon('hash')}</span><span><strong>Código de 8 dígitos <span class="visually-hidden">Pairing code</span></strong><small>Lo escribes en el dispositivo del bot.</small></span></button></div></div></div>`;
+    content = `<div class="wizard-form"><label class="field"><span class="field-label">Número del bot</span><input class="text-input" type="tel" inputmode="tel" name="flow-phone" data-flow="phone" value="${phoneValue}" placeholder="+57 301 944 8245" autocomplete="tel" /><span class="field-hint">Usa el número de tu cuenta de WhatsApp, con código de país. El código se mostrará aquí; no se envía por SMS.</span></label><div class="field"><span class="field-label">Cómo quieres vincularlo</span><div class="pairing-methods"><button class="pairing-option ${flow.pairingMode === 'qr' ? 'is-selected' : ''}" type="button" data-action="select-method" data-method="qr"><span class="pairing-option-icon">${icon('qr')}</span><span><strong>Código QR</strong><small>Escaneas un código desde el dispositivo del bot.</small></span></button><button class="pairing-option ${flow.pairingMode === 'pairing' ? 'is-selected' : ''}" type="button" data-action="select-method" data-method="pairing"><span class="pairing-option-icon">${icon('hash')}</span><span><strong>Código de 8 caracteres <span class="visually-hidden">Pairing code</span></strong><small>Lo escribes en el dispositivo del bot.</small></span></button></div></div></div>`;
   } else if (step === 3) {
     title = 'Resumen';
     description = 'Revisa los datos. Después podrás vincular WhatsApp con el QR o código del panel.';
     const server = state.system?.server;
-    content = `<div class="wizard-form"><div class="callout">${icon('bulb')}<span><strong>Este es el servidor real donde correrá tu bot.</strong><br />${escapeHtml(server?.hostname || 'Servidor')} · ${escapeHtml(server?.platform || '—')} · Node ${escapeHtml(server?.node || '—')}</span></div><div class="profile-details"><div class="profile-detail"><span>Nombre</span><strong>${escapeHtml(flow.name || '—')}</strong></div><div class="profile-detail"><span>Prefijo</span><strong class="mono">${escapeHtml(flow.prefix)}</strong></div><div class="profile-detail"><span>Número</span><strong>${escapeHtml(flow.phone || '—')}</strong></div><div class="profile-detail"><span>Vinculación</span><strong>${flow.pairingMode === 'qr' ? 'Código QR' : 'Código de 8 dígitos'}</strong></div></div></div>`;
+    content = `<div class="wizard-form"><div class="callout">${icon('bulb')}<span><strong>Este es el servidor real donde correrá tu bot.</strong><br />${escapeHtml(server?.hostname || 'Servidor')} · ${escapeHtml(server?.platform || '—')} · Node ${escapeHtml(server?.node || '—')}</span></div><div class="profile-details"><div class="profile-detail"><span>Nombre</span><strong>${escapeHtml(flow.name || '—')}</strong></div><div class="profile-detail"><span>Prefijo</span><strong class="mono">${escapeHtml(flow.prefix)}</strong></div><div class="profile-detail"><span>Número</span><strong>${escapeHtml(flow.phone || '—')}</strong></div><div class="profile-detail"><span>Vinculación</span><strong>${flow.pairingMode === 'qr' ? 'Código QR' : 'Código de 8 caracteres'}</strong></div></div></div>`;
   } else if (step === 4) {
     return renderConnectStep();
   } else if (step === 5) {
@@ -508,11 +508,12 @@ function rememberPairing({ id, formatted, issuedAt = Date.now(), lifetimeSec = P
   state.pairing = {
     ...state.pairing,
     id: id ?? state.pairing.id,
+    code: formatted ? formatted.replace(/-/g, '') : null,
     formatted: formatted ?? '',
     issuedAt: formatted ? issuedAt : null,
     lifetimeSec,
     error,
-    loading: false,
+    loading: state.pairing.loading,
   };
   startPairingTicker();
   updatePairingCountdown();
@@ -544,26 +545,27 @@ function updatePairingCountdown() {
     if (left == null) { node.textContent = ''; return; }
     node.textContent = left > 0 ? `caduca en ${left}s` : 'expirado · pide otro';
     const card = node.closest('[data-pairing-card]');
-    if (card) card.style.setProperty('--pairing-progress', `${Math.max(0, Math.min(100, (left / PAIRING_LIFETIME_SEC) * 100))}%`);
+    if (card) {
+      card.style.setProperty('--pairing-progress', `${Math.max(0, Math.min(100, (left / PAIRING_LIFETIME_SEC) * 100))}%`);
+      if (left === 0) {
+        const code = card.querySelector('[data-pairing-code]');
+        if (code) code.textContent = 'Código caducado';
+        const copy = card.querySelector('[data-action="copy-pairing"]');
+        if (copy) copy.disabled = true;
+        const badge = card.querySelector('.status-badge');
+        if (badge) { badge.textContent = 'Código caducado'; badge.classList.replace('status-online', 'status-offline'); }
+      }
+    }
   });
-  if (left === 0 && state.pairing.autoRefresh !== false) maybeAutoRefreshPairing();
+  // No renovar automáticamente: invalidaría el código que se está escribiendo.
   return left == null ? false : true;
-}
-
-/** Si el código caducó y la sesión sigue vinculándose, pide otro (con enfriamiento). */
-function maybeAutoRefreshPairing() {
-  const id = state.pairing.id;
-  if (!id || state.pairing.loading) return;
-  if (Date.now() - state.pairing.lastRequestAt < 8000) return;
-  const instance = state.instances.find((item) => item.id === id) ?? state.connectTarget;
-  if (!instance || instance.status === 'open') return;
-  requestPairing(id, { silent: true });
 }
 
 function pairingCard({ id, mode = 'pairing', connected = false, context = 'modal' }) {
   const pairing = state.pairing.id === id ? state.pairing : { ...state.pairing, id, formatted: '', issuedAt: null, error: '' };
   const left = state.pairing.id === id ? pairingSecondsLeft() : null;
   const isQr = mode === 'qr';
+  const activeCode = Boolean(pairing.formatted && left > 0 && !pairing.loading);
 
   if (connected) {
     return `<div class="pairing-card" data-pairing-card><div class="pairing-card-head"><div><h3>${icon('check')} Sesión vinculada</h3><small>Este sub-bot ya está conectado a WhatsApp.</small></div></div><p class="pairing-wa-note">Ya puedes usar los comandos del bot. No necesitas ninguna clave de activación.</p></div>`;
@@ -575,18 +577,18 @@ function pairingCard({ id, mode = 'pairing', connected = false, context = 'modal
         <h3>${icon(isQr ? 'qr' : 'hash')} ${isQr ? 'Código QR de WhatsApp' : 'Pairing code real de WhatsApp'}</h3>
         <small>${isQr ? 'Escanea desde el teléfono del bot.' : 'Escribe este código en el teléfono del bot.'}</small>
       </div>
-      <span class="status-badge ${pairing.formatted ? 'status-online' : 'status-offline'}"><i class="pulse-dot"></i>${pairing.formatted ? 'Código activo' : 'Sin código'}</span>
+      <span class="status-badge ${activeCode ? 'status-online' : 'status-offline'}"><i class="pulse-dot"></i>${activeCode ? 'Código disponible' : 'Sin código vigente'}</span>
     </div>
     ${isQr
       ? `<div class="pairing-empty">El QR aparece aquí en cuanto WhatsApp lo emite (se renueva solo cada ~${state.me?.qrExpiresInSec ?? 20}s).</div>`
       : pairing.formatted
-        ? `<div class="pairing-code-row"><span class="pairing-code" data-pairing-code>${escapeHtml(pairing.formatted)}</span><button class="glow-btn glow-btn-soft" type="button" data-action="copy-pairing">${icon('copy')} Copiar código</button></div>
+        ? `<div class="pairing-code-row"><span class="pairing-code" data-pairing-code>${activeCode ? escapeHtml(pairing.formatted) : 'Código caducado'}</span><button class="glow-btn glow-btn-soft" type="button" data-action="copy-pairing" ${activeCode ? '' : 'disabled'}>${icon('copy')} Copiar código</button></div>
            <div class="pairing-progress"><span class="track"><span class="fill"></span></span><span data-pairing-countdown>${left != null && left > 0 ? `caduca en ${left}s` : 'expirado · pide otro'}</span></div>`
         : `<div class="pairing-empty">${pairing.error ? escapeHtml(pairing.error) : 'Pulsa <b>Pedir pairing code</b> y WhatsApp emitirá el código real para este número.'}</div>`}
     <ol class="pairing-steps">
       <li><b>1.</b><span>Abre WhatsApp en el teléfono de <b>${escapeHtml(state.instances.find((i) => i.id === id)?.phoneMasked || 'ese número')}</b>.</span></li>
       <li><b>2.</b><span>Ajustes → <b>Dispositivos vinculados</b> → <b>Vincular un dispositivo</b>${isQr ? '' : ' → <b>Vincular con el número de teléfono</b>'}.</span></li>
-      <li><b>3.</b><span>${isQr ? 'Escanea el código.' : 'Escribe el pairing code tal cual (ej. <b>ABCD-1234</b>).'}</span></li>
+      <li><b>3.</b><span>${isQr ? 'Escanea el código.' : 'Escribe los 8 caracteres del código que aparece arriba.'}</span></li>
     </ol>
     ${isQr ? '' : `<div class="pairing-wa-note">${icon('whatsapp')} También puedes pedir el código desde WhatsApp: envía <code>.key</code> (o <code>.pairing</code>) a cualquier bot conectado y te devuelve este mismo código.</div>`}
     <div class="pairing-actions">
@@ -601,19 +603,21 @@ function pairingCard({ id, mode = 'pairing', connected = false, context = 'modal
 function flow_loading_guard() { return state.flow.loading ? 'disabled' : ''; }
 
 /** Pide a WhatsApp el pairing code REAL del sub-bot. */
-async function requestPairing(id, { silent = false } = {}) {
-  if (!id) return;
-  state.pairing = { ...state.pairing, id, loading: true, error: '', lastRequestAt: Date.now() };
+async function requestPairing(id, { silent = false, force = false } = {}) {
+  if (!id || state.pairing.loading) return;
+  state.pairing = { ...state.pairing, id, code: null, formatted: '', issuedAt: null, loading: true, error: '', lastRequestAt: Date.now() };
   if (!silent) { scheduleRender(); paintConnectModal(); }
   try {
-    const data = await request(`/instances/${encodeURIComponent(id)}/pairing`, { method: 'POST', body: { waitMs: 15000 } });
-    rememberPairing({ id, formatted: data.formatted || '', issuedAt: data.issuedAt ?? Date.now(), lifetimeSec: data.expiresInSec ? data.expiresInSec + (data.ageSec ?? 0) : PAIRING_LIFETIME_SEC });
+    const data = await request(`/instances/${encodeURIComponent(id)}/pairing`, { method: 'POST', body: { waitMs: 15000, force } });
+    if (state.pairing.id !== id) return;
+    rememberPairing({ id, formatted: data.formatted || '', issuedAt: data.issuedAt ?? Date.now(), lifetimeSec: PAIRING_LIFETIME_SEC });
     if (!silent) showToast('Pairing code real emitido por WhatsApp', 'success');
-    else showToast('Pairing code renovado automáticamente', 'info');
   } catch (error) {
+    if (state.pairing.id !== id) return;
     state.pairing = { ...state.pairing, loading: false, error: error.message || 'No se pudo obtener el pairing code.' };
     if (!silent) showToast(state.pairing.error, 'error');
   } finally {
+    if (state.pairing.id === id) state.pairing.loading = false;
     scheduleRender();
     paintConnectModal();
   }
@@ -724,8 +728,8 @@ async function syncLink(id, { silent = false } = {}) {
     }
     const index = state.instances.findIndex((item) => item.id === id);
     if (index >= 0) state.instances[index] = { ...state.instances[index], ...data, linkData: data };
-    if (data.pairingFormatted) {
-      rememberPairing({ id, formatted: data.pairingFormatted, issuedAt: data.pairingCodeAt ?? Date.now(), lifetimeSec: data.pairingExpiresInSec ?? PAIRING_LIFETIME_SEC });
+    if (state.pairing.id === id) {
+      rememberPairing({ id, formatted: data.pairingFormatted, issuedAt: data.pairingCodeAt ?? Date.now(), lifetimeSec: PAIRING_LIFETIME_SEC });
     }
     if (state.flow.instanceId === id) state.flow.linkData = data;
     if (['open', 'connected'].includes(String(data.status || '').toLowerCase())) stopLinkWatch(id);
@@ -1179,9 +1183,9 @@ async function generateLink() {
     flow.loading = false;
     flow.step = 4;
     if (link?.pairingFormatted) {
-      rememberPairing({ id: flow.instanceId, formatted: link.pairingFormatted, issuedAt: link.pairingCodeAt ?? Date.now(), lifetimeSec: link.pairingExpiresInSec ?? PAIRING_LIFETIME_SEC });
+      rememberPairing({ id: flow.instanceId, formatted: link.pairingFormatted, issuedAt: link.pairingCodeAt ?? Date.now(), lifetimeSec: PAIRING_LIFETIME_SEC });
     } else if (flow.pairingMode === 'pairing') {
-      state.pairing = { ...state.pairing, id: flow.instanceId, formatted: '', issuedAt: null, error: '', loading: true };
+      state.pairing = { ...state.pairing, id: flow.instanceId, formatted: '', issuedAt: null, error: '', loading: false };
       renderPage({ force: true });
       await requestPairing(flow.instanceId, { silent: true });
     }
@@ -1502,10 +1506,10 @@ function handleClick(event) {
     if (instance) openConnect(instance);
   }
   else if (action === 'refresh-connect-link') refreshConnectLink();
-  else if (action === 'request-pairing') requestPairing(actionTarget.dataset.id || state.pairing.id);
+  else if (action === 'request-pairing') requestPairing(actionTarget.dataset.id || state.pairing.id, { force: true });
   else if (action === 'copy-pairing') {
-    const code = state.pairing.formatted || document.querySelector('[data-pairing-code]')?.textContent?.trim() || '';
-    copyText(code, 'Pairing code copiado');
+    if (pairingSecondsLeft() > 0 && !state.pairing.loading) copyText(state.pairing.formatted, 'Pairing code copiado');
+    else showToast('Solicita un código nuevo antes de copiarlo.', 'error');
   }
   else if (action === 'check-link') syncLink(actionTarget.dataset.id || state.pairing.id, { silent: false });
   else if (action === 'confirm-dialog') {
@@ -1647,10 +1651,8 @@ function applyInstanceState(snapshot) {
   if (state.flow.instanceId === snapshot.id) {
     state.flow.linkData = { ...(state.flow.linkData ?? {}), ...snapshot };
   }
-  if (snapshot.pairingCode && snapshot.pairingCode !== state.pairing.code) {
-    state.pairing = { ...state.pairing, id: snapshot.id, code: snapshot.pairingCode, formatted: snapshot.pairingFormatted || snapshot.pairingCode, issuedAt: snapshot.pairingCodeAt ?? Date.now(), error: '', loading: false };
-    startPairingTicker();
-    showToast('Pairing code real recibido de WhatsApp', 'success');
+  if (state.pairing.id === snapshot.id && Object.hasOwn(snapshot, 'pairingCode')) {
+    rememberPairing({ id: snapshot.id, formatted: snapshot.pairingFormatted || snapshot.pairingCode || '', issuedAt: snapshot.pairingCodeAt });
   }
   if (snapshot.status === 'open') {
     stopLinkWatch(snapshot.id);
