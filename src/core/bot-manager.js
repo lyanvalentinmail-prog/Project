@@ -248,7 +248,7 @@ export class BotManager extends EventEmitter {
       formatted: formatPairing(result.code),
       issuedAt: result.issuedAt ?? null,
       ageSec: result.issuedAt ? Math.round((Date.now() - result.issuedAt) / 1000) : 0,
-      expiresInSec: Math.max(0, Math.round(env.qrTimeoutMs / 1000) - (result.issuedAt ? Math.round((Date.now() - result.issuedAt) / 1000) : 0)),
+      expiresInSec: Math.max(0, 60 - (result.issuedAt ? Math.round((Date.now() - result.issuedAt) / 1000) : 0)),
       cached: Boolean(result.cached),
     };
   }
@@ -269,7 +269,7 @@ export class BotManager extends EventEmitter {
       const code = client?.pairingCode ?? null;
       const issuedAt = client?.pairingCodeAt ?? null;
       const ageMs = issuedAt ? Date.now() - issuedAt : null;
-      if (onlyFresh && (!code || ageMs == null || ageMs > 60_000)) continue;
+      if (onlyFresh && !client?.pairingCodeFresh(60_000)) continue;
       rows.push({
         id: row.id,
         name: row.name,

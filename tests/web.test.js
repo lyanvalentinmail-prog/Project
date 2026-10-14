@@ -174,6 +174,7 @@ test('el panel obtiene QR y pairing directamente, sin enviar .key', async (t) =>
     const code = await api(`/api/instances/${pairing.id}/pairing`, { method: 'POST' });
     assert.equal(code.status, 200);
     assert.equal(code.data.formatted, 'ABCD-1234');
+    assert.equal(code.data.expiresInSec + code.data.ageSec, 60, 'la vigencia no depende del timeout del QR');
     assert.equal(instancesRepo.byId(pairing.id).autostart, 1);
   } finally {
     manager.clients.delete(qr.id);
