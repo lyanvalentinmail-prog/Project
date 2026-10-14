@@ -9,7 +9,7 @@ import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import fs from 'node:fs';
 import { env } from '../config/env.js';
-import { BotClient } from './bot-client.js';
+import { BotClient, PAIRING_CODE_TTL_MS } from './bot-client.js';
 import { instancesRepo, groupsRepo, auditRepo, normalizePrefix } from '../db/index.js';
 import { maskPhone } from '../utils/ids.js';
 import { scoped } from './logger.js';
@@ -161,6 +161,10 @@ export class BotManager extends EventEmitter {
     let client = this.clients.get(id);
     if (client) {
       if (client.status === 'open') return { ok: true, client: client.snapshot(), alreadyRunning: true };
+      // Vinculación en curso: derribar el socket mataría el pairing code
+      // que la persona está escribiendo en el teléfono. Un «start» de más
+      // (el panel lo repite al abrir el asistente) no debe invalidarlo.
+      if (client.isLinking) return { ok: true, client: client.snapshot(), alreadyRunning: true };
       await client.stop({ reason: 'restart' }).catch(() => null);
       this.clients.delete(id);
     }
@@ -221,12 +225,24 @@ export class BotManager extends EventEmitter {
     return { ok: true };
   }
 
-  async refreshPairingCode(id) {
+  /**
+   * Código vigente del sub-bot. Sin `force` reutiliza el que ya se está
+   * mostrando: regenerar invalidaría al instante el código anterior en
+   * WhatsApp, aunque todavía le quedara vigencia anunciada. Solo una
+   * petición explícita de «código nuevo» (`force`) lo sustituye.
+   */
+  async refreshPairingCode(id, { force = false } = {}) {
     const client = this.clients.get(id);
     if (!client) return { ok: false, error: 'El sub-bot no está en marcha.' };
     if (!client.pairingMode) return { ok: false, error: 'Este sub-bot se vincula por QR, no por código.' };
+    if (!force) {
+      const result = await client.ensurePairingCode();
+      return result.ok
+        ? { ok: true, code: result.code, cached: Boolean(result.cached) }
+        : { ok: false, error: result.reason };
+    }
     const code = await client.refreshPairingCode();
-    return code ? { ok: true, code } : { ok: false, error: 'WhatsApp no devolvió un código nuevo.' };
+    return code ? { ok: true, code, cached: false } : { ok: false, error: 'WhatsApp no devolvió un código nuevo.' };
   }
 
   /**
@@ -240,6 +256,7 @@ export class BotManager extends EventEmitter {
     if (!client) return { ok: false, error: 'La sesión de vinculación no está abierta. Pulsa "Generar vinculación" en el panel.' };
     const result = await client.ensurePairingCode(options);
     if (!result.ok) return { ok: false, error: result.reason };
+    const ageSec = result.issuedAt ? Math.round((Date.now() - result.issuedAt) / 1000) : 0;
     return {
       ok: true,
       id,
@@ -247,8 +264,8 @@ export class BotManager extends EventEmitter {
       code: result.code,
       formatted: formatPairing(result.code),
       issuedAt: result.issuedAt ?? null,
-      ageSec: result.issuedAt ? Math.round((Date.now() - result.issuedAt) / 1000) : 0,
-      expiresInSec: Math.max(0, 60 - (result.issuedAt ? Math.round((Date.now() - result.issuedAt) / 1000) : 0)),
+      ageSec,
+      expiresInSec: Math.max(0, Math.round(PAIRING_CODE_TTL_MS / 1000) - ageSec),
       cached: Boolean(result.cached),
     };
   }
@@ -269,7 +286,7 @@ export class BotManager extends EventEmitter {
       const code = client?.pairingCode ?? null;
       const issuedAt = client?.pairingCodeAt ?? null;
       const ageMs = issuedAt ? Date.now() - issuedAt : null;
-      if (onlyFresh && !client?.pairingCodeFresh(60_000)) continue;
+      if (onlyFresh && !client?.pairingCodeFresh(PAIRING_CODE_TTL_MS)) continue;
       rows.push({
         id: row.id,
         name: row.name,
@@ -281,7 +298,7 @@ export class BotManager extends EventEmitter {
         code,
         formatted: formatPairing(code),
         ageSec: ageMs == null ? null : Math.round(ageMs / 1000),
-        expiresInSec: ageMs == null ? null : Math.max(0, 60 - Math.round(ageMs / 1000)),
+        expiresInSec: ageMs == null ? null : Math.max(0, Math.round((PAIRING_CODE_TTL_MS - ageMs) / 1000)),
         isOwnNumber: Boolean(digits && String(row.phone).replace(/[^\d]/g, '') === digits),
       });
     }

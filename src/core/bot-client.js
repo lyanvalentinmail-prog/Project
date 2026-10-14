@@ -38,6 +38,44 @@ import { backoff, sleep } from '../utils/misc.js';
 
 const log = scoped('client');
 
+/**
+ * Vigencia REAL de un pairing code, en ms. Es la ÚNICA fuente de verdad:
+ * el panel la muestra como cuenta atrás (60 s), el bot la anuncia por
+ * WhatsApp y ningún camino (panel, `.pairing`, renovación) puede pedir
+ * otro código antes de que venza: WhatsApp solo acepta el ÚLTIMO código
+ * registrado para el número, así que regenerar a los 45 s —como se hacía—
+ * invalidaba en silencio el código que la persona estaba escribiendo y
+ * el teléfono respondía «código inválido».
+ */
+export const PAIRING_CODE_TTL_MS = 60_000;
+
+/**
+ * Credenciales de una vinculación que NUNCA se completó.
+ *
+ * Al pedir un pairing code, Baileys guarda en creds.json la identidad
+ * provisional (`creds.me`, nombre «~») y el código, con
+ * `registered: false`. Si el socket se cae antes de vincular (timeout de
+ * refs, reinicio del servidor, corte de red…), el siguiente arranque lee
+ * esas credenciales y Baileys entra por la rama de LOGIN en vez de la de
+ * REGISTRO: WhatsApp no ofrece refs de emparejamiento a un dispositivo
+ * jamás vinculado, nunca llega un código nuevo y el último entregado
+ * muere con su socket → «código inválido» en cada intento, para siempre,
+ * hasta borrar la carpeta de sesión a mano.
+ *
+ * Limpiar la identidad provisional (conservando las claves) antes de
+ * crear el socket devuelve el arranque a la rama de registro, igual que
+ * una carpeta de sesión nueva. Una sesión ya vinculada
+ * (`registered: true`) jamás se toca.
+ *
+ * @returns {boolean} true si había credenciales provisionales y se limpiaron
+ */
+export function resetStalePairingCreds(creds) {
+  if (!creds || creds.registered || !creds.me) return false;
+  creds.me = undefined;
+  creds.pairingCode = undefined;
+  return true;
+}
+
 /** Versión de WhatsApp Web conocida (fallback si no hay red). */
 const FALLBACK_VERSION = [2, 3000, 1025124219];
 let cachedVersion = null;
@@ -177,6 +215,15 @@ export class BotClient extends EventEmitter {
     fs.mkdirSync(this.sessionDir, { recursive: true, mode: 0o700 });
 
     const { state, saveCreds } = await useMultiFileAuthState(this.sessionDir);
+
+    // Una vinculación anterior que no se completó deja `creds.me`
+    // provisional guardado: sin limpiarlo, Baileys intenta LOGIN (sin
+    // refs ni código nuevo) y todo código entregado sale «inválido».
+    if (resetStalePairingCreds(state.creds)) {
+      await saveCreds().catch((error) => log.warn({ err: error, id: this.id }, 'no se pudieron reiniciar las credenciales de vinculación'));
+      log.info({ id: this.id }, 'vinculación incompleta anterior: se reinicia el registro para emitir un código válido');
+    }
+
     const version = await resolveVersion();
 
     this.saveCreds = saveCreds;
@@ -512,16 +559,21 @@ export class BotClient extends EventEmitter {
     return request;
   }
 
-  /** Ventana local conservadora; la validez final la decide WhatsApp. */
-  pairingCodeFresh(maxAgeMs = 45_000) {
+  /**
+   * ¿El código emitido sigue dentro de su vigencia anunciada (60 s)?
+   * Nunca se acorta por debajo de PAIRING_CODE_TTL_MS: acortarla hacía
+   * que una consulta inocente (`.pairing`, otra pestaña del panel)
+   * regenerara el código y dejara inválido el que se estaba tecleando.
+   */
+  pairingCodeFresh(maxAgeMs = PAIRING_CODE_TTL_MS) {
     if (!this.sock || !this._pairingReady || this.stopping || this.status !== 'pairing' ||
         this.authState?.creds?.registered || !this.pairingCode) return false;
     const age = Date.now() - this.pairingCodeAt;
-    return this.pairingCodeAt != null && age >= 0 && age <= Math.min(maxAgeMs, 60_000);
+    return this.pairingCodeAt != null && age >= 0 && age <= Math.min(maxAgeMs, PAIRING_CODE_TTL_MS);
   }
 
   /** Espera al handshake o a la petición compartida, sin devolver códigos viejos. */
-  async ensurePairingCode({ waitMs = 12_000, maxAgeMs = 45_000, force = false } = {}) {
+  async ensurePairingCode({ waitMs = 12_000, maxAgeMs = PAIRING_CODE_TTL_MS, force = false } = {}) {
     if (!this.pairingMode) return { ok: false, reason: 'Este sub-bot se vincula por QR, no por código.' };
     if (this.status === 'open' || this.authState?.creds?.registered) {
       return { ok: false, reason: 'Ese sub-bot ya está vinculado con WhatsApp.' };
@@ -565,6 +617,16 @@ export class BotClient extends EventEmitter {
     if (!metadata) return false;
     const me = normalizeJid(this.jid);
     return (metadata.participants ?? []).some((p) => normalizeJid(p.id) === me && Boolean(p.admin));
+  }
+
+  /**
+   * ¿Hay una vinculación en curso sobre un socket vivo? Si la hay, un
+   * `start` redundante (el panel lo llama al abrir el asistente) NO debe
+   * derribar el socket: el código que la persona tiene en la mano está
+   * registrado en ese socket y moriría con él («código inválido»).
+   */
+  get isLinking() {
+    return Boolean(this.sock) && ['starting', 'connecting', 'qr', 'pairing'].includes(this.status);
   }
 
   /** Ruta de la carpeta de credenciales (para borrarla desde el panel). */

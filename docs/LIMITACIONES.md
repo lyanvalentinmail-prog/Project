@@ -79,6 +79,20 @@ Y no intenta la llamada (evita errores silenciosos y bans).
 El panel muestra el código formateado (`ABCD-1234`), permite **regenerarlo** y avisa si
 WhatsApp no lo devolvió (por ejemplo, si el número ya está vinculado o no existe).
 
+Dos detalles que antes provocaban «código inválido» con un código recién emitido:
+
+- WhatsApp solo acepta el **último** código registrado para el número. Pedir otro
+  antes de que venza el anterior (aunque sea desde `.pairing` u otra pestaña) mata
+  el que estás escribiendo. Por eso todas las rutas reutilizan el mismo código
+  durante sus 60 s de vigencia; solo la petición explícita de un código nuevo o el
+  vencimiento lo sustituyen.
+- Si el socket se cae a mitad de la vinculación, la siguiente conexión vuelve a
+  registrarse desde cero: las credenciales provisionales de Baileys (con
+  `creds.me` guardado pero `registered: false`) harían que el nuevo socket
+  intentara *iniciar sesión* en vez de *registrarse*, sin emitir jamás un código
+  válido. El cliente las detecta y las reinicia al arrancar, así que basta con
+  pedir un código nuevo; no hay que borrar la carpeta de sesión.
+
 ---
 
 ## 7. Riesgo de suspensión de la cuenta

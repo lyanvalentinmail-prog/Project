@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { DisconnectReason } from '@whiskeysockets/baileys';
 import { sim } from './_harness.js';
-import { BotClient } from '../src/core/bot-client.js';
+import { BotClient, PAIRING_CODE_TTL_MS, resetStalePairingCreds } from '../src/core/bot-client.js';
+import { BotManager } from '../src/core/bot-manager.js';
+import { instancesRepo } from '../src/db/index.js';
 
 function deferred() {
   let resolve;
@@ -178,4 +180,115 @@ test('la frescura depende de la sesión activa y de la fecha, no solo del códig
   client.pairingCodeAt = Date.now();
   client.sock = null;
   assert.equal(client.pairingCodeFresh(), false);
+});
+
+/* ── regresión: «código inválido» con el código recién emitido ────
+ * WhatsApp solo acepta el ÚLTIMO pairing code registrado para el
+ * número. Antes, `ensurePairingCode` consideraba «viejo» un código de
+ * 45 s mientras el panel lo anunciaba válido hasta los 60 s: cualquier
+ * consulta intermedia (`.pairing` desde WhatsApp, otra pestaña) pedía
+ * otro código y el que la persona estaba escribiendo salía inválido. */
+
+test('un código de 50 s se reutiliza: ninguna consulta lo invalida antes de vencer (60 s)', async () => {
+  let count = 0;
+  const { client, calls, update } = fixture(async () => (++count === 1 ? 'ABCD1234' : 'EFGH5678'));
+  await update({ qr: 'ready' });
+  assert.equal(calls.length, 1);
+  // 50 s después el panel aún lo muestra como válido (cuenta atrás 60 s)…
+  client.pairingCodeAt = Date.now() - 50_000;
+  const again = await client.ensurePairingCode();
+  assert.equal(again.ok, true);
+  assert.equal(again.code, 'ABCD1234', 'debe entregar el mismo código, no uno nuevo');
+  assert.equal(again.cached, true);
+  // …y WhatsApp solo recibió UNA registration: el código en pantalla sigue vivo
+  assert.equal(calls.length, 1, 'no se pidió otro código a WhatsApp');
+  assert.equal(client.pairingCodeFresh(), true);
+  assert.equal(client.pairingCodeFresh(PAIRING_CODE_TTL_MS), true);
+});
+
+test('solo al vencer la vigencia real (60 s) se emite un código nuevo', async () => {
+  let count = 0;
+  const { client, calls, update } = fixture(async () => (++count === 1 ? 'ABCD1234' : 'EFGH5678'));
+  await update({ qr: 'ready' });
+  client.pairingCodeAt = Date.now() - (PAIRING_CODE_TTL_MS + 1_000);
+  assert.equal(client.pairingCodeFresh(), false);
+  const fresh = await client.ensurePairingCode();
+  assert.equal(fresh.ok, true);
+  assert.equal(fresh.code, 'EFGH5678');
+  assert.equal(calls.length, 2);
+});
+
+/* ── regresión: credenciales provisionales de una vinculación ────
+ * Baileys guarda `creds.me` provisional al pedir el código. Si el
+ * socket muere antes de vincular, sin limpiarlas el siguiente arranque
+ * entra por LOGIN (no por REGISTRO): no hay refs, no hay código nuevo
+ * y el último código entregado sale «inválido» para siempre. */
+
+test('resetStalePairingCreds limpia la identidad provisional no registrada y conserva las claves', () => {
+  const creds = {
+    registered: false,
+    me: { id: '573019448245@s.whatsapp.net', name: '~' },
+    pairingCode: 'ABCD1234',
+    noiseKey: { public: 'pub', private: 'priv' },
+    signedIdentityKey: { public: 'idpub' },
+  };
+  assert.equal(resetStalePairingCreds(creds), true);
+  assert.equal(creds.me, undefined, 'sin me, Baileys vuelve a la rama de registro (refs + código)');
+  assert.equal(creds.pairingCode, undefined);
+  assert.deepEqual(creds.noiseKey, { public: 'pub', private: 'priv' }, 'las claves se conservan');
+});
+
+test('resetStalePairingCreds jamás toca una sesión vinculada ni una credencial limpia', () => {
+  const linked = { registered: true, me: { id: '573019448245@s.whatsapp.net', name: 'Bot' }, pairingCode: undefined };
+  assert.equal(resetStalePairingCreds(linked), false);
+  assert.equal(linked.me.name, 'Bot');
+
+  const clean = { registered: false, me: undefined, pairingCode: undefined };
+  assert.equal(resetStalePairingCreds(clean), false);
+  assert.equal(resetStalePairingCreds(null), false);
+  assert.equal(resetStalePairingCreds(undefined), false);
+});
+
+test('isLinking refleja una vinculación viva y BotManager.start no la derriba', async () => {
+  const { client, update } = fixture();
+  await update({ qr: 'ready' });
+  assert.equal(client.isLinking, true, 'socket vivo en estado pairing');
+  client.sock = null;
+  assert.equal(client.isLinking, false, 'sin socket no hay vinculación que proteger');
+
+  const manager = new BotManager();
+  const instance = instancesRepo.all()[0];
+  assert.ok(instance, 'el arnés crea una instancia');
+  const fake = { status: 'pairing', isLinking: true, snapshot: () => ({ id: instance.id, status: 'pairing' }) };
+  manager.clients.set(instance.id, fake);
+  try {
+    const result = await manager.start(instance.id);
+    assert.equal(result.ok, true);
+    assert.equal(result.alreadyRunning, true);
+    assert.equal(manager.clients.get(instance.id), fake, 'el cliente en vinculación no se reemplaza');
+  } finally {
+    manager.clients.delete(instance.id);
+  }
+});
+
+test('refreshPairingCode del manager reutiliza el vigente y solo regenera con force', async () => {
+  const manager = new BotManager();
+  let ensureCalls = 0;
+  let refreshCalls = 0;
+  manager.clients.set('fake-id', {
+    pairingMode: true,
+    ensurePairingCode: async () => { ensureCalls += 1; return { ok: true, code: 'ABCD1234', cached: true }; },
+    refreshPairingCode: async () => { refreshCalls += 1; return 'EFGH5678'; },
+  });
+  const reused = await manager.refreshPairingCode('fake-id');
+  assert.equal(reused.ok, true);
+  assert.equal(reused.code, 'ABCD1234');
+  assert.equal(reused.cached, true);
+  assert.equal(refreshCalls, 0, 'sin force no se pide otro código a WhatsApp');
+
+  const forced = await manager.refreshPairingCode('fake-id', { force: true });
+  assert.equal(forced.code, 'EFGH5678');
+  assert.equal(refreshCalls, 1, 'con force sí se regenera (petición explícita)');
+  assert.equal(ensureCalls, 1);
+  manager.clients.delete('fake-id');
 });
