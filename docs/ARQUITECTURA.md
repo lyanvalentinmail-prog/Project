@@ -64,7 +64,8 @@ reescribir comandos.
 | Decisión | Motivo |
 |---|---|
 | Baileys y no whatsapp-web.js | No requiere Chromium/Puppeteer (RAM ~80 MB vs ~600 MB), soporta **varios números en un mismo proceso** y expone **pairing code** de forma nativa, que es lo que pide el panel web. |
-| SQLite (better-sqlite3) en WAL | Persistencia real sin servidor externo, lecturas/escrituras síncronas y rápidas, transacciones para invariantes (un personaje = un dueño). |
+| SQLite en WAL (`better-sqlite3` o `node:sqlite`) | Persistencia real sin servidor externo, lecturas/escrituras síncronas y rápidas, transacciones para invariantes (un personaje = un dueño). `better-sqlite3` es opcional: si no está instalado (Termux/Android, o no compiló) se usa el SQLite integrado en Node ≥ 22.13 con la misma API (`src/db/driver.js`). |
+| Corre donde haya Node | PC, VPS, Render y **Android con Termux** (`docs/TERMUX.md`): sin módulos nativos obligatorios, puertos ≥ 1024 y una sola copia por carpeta de datos (`data/versova.pid`). |
 | Servicios + plantillas separados | Testeable sin WhatsApp; los mensajes decorados se cambian sin tocar la lógica. |
 | Un proceso, N sockets | Los 3 sub-bots comparten base de datos y panel; cada uno tiene su carpeta de credenciales aislada. |
 | SSE en el panel | QR, pairing code y logs en vivo sin WebSockets ni dependencias extra. |
@@ -75,9 +76,9 @@ reescribir comandos.
 
 | Capa | Tecnología | Versión | Para qué |
 |---|---|---|---|
-| Runtime | Node.js | ≥ 22 | ESM nativo, `node:test`, estable |
+| Runtime | Node.js | ≥ 22.13 | ESM nativo, `node:test`, `node:sqlite` integrado |
 | WhatsApp | `@whiskeysockets/baileys` | 7.0.0-rc14 | Protocolo MD, QR, pairing code, grupos |
-| BD | `better-sqlite3` | 13.x | Persistencia, transacciones |
+| BD | `better-sqlite3` (opcional) · `node:sqlite` | 13.x · integrado | Persistencia, transacciones. `DB_DRIVER=auto\|better-sqlite3\|node` |
 | Web | `express` | 5.x | API REST del panel |
 | QR | `qrcode` | 1.5.x | PNG/DataURL del QR en el navegador |
 | Config | `dotenv` | 18.x | `.env` |
@@ -96,8 +97,9 @@ Project/
 ├── docs/
 │   ├── ARQUITECTURA.md      ← este documento
 │   ├── BASE_DE_DATOS.md     ← esquema campo por campo
-│   ├── COMANDOS.md          ← los 40+ comandos con sintaxis y permisos
-│   └── LIMITACIONES.md      ← qué NO puede hacer WhatsApp y por qué
+│   ├── COMANDOS.md          ← los 53 comandos con sintaxis y permisos
+│   ├── LIMITACIONES.md      ← qué NO puede hacer WhatsApp y por qué
+│   └── TERMUX.md            ← ejecutar el bot en Android (Termux)
 ├── src/
 │   ├── index.js             ← punto de entrada (bot + web, flags --no-web/--web-only)
 │   ├── config/
@@ -109,9 +111,11 @@ Project/
 │   │   ├── router.js        ← dispatcher de comandos + confirmaciones
 │   │   ├── context.js       ← ctx (autor, grupo, reply, menciones, quoted)
 │   │   ├── events.js        ← bienvenida, despedida, re-ban, AFK, actividad
+│   │   ├── terminal-link.js ← pairing codes, QR y estados también en la consola
 │   │   └── logger.js        ← pino + log en archivo
 │   ├── db/
 │   │   ├── index.js         ← conexión, WAL, migraciones
+│   │   ├── driver.js        ← elige better-sqlite3 o node:sqlite (misma API)
 │   │   ├── schema.sql       ← DDL completo
 │   │   └── repositories/    ← users, roles, groups, requests, warnings,
 │   │                          couples, audit, instances, confirmations
@@ -134,7 +138,9 @@ Project/
 │   │   ├── theme.js         ← símbolos, separadores, kaomojis, paletas
 │   │   ├── templates.js     ← cada mensaje con diseño propio
 │   │   └── menu.js          ← menú principal (tal cual lo definiste)
-│   └── utils/               ← ids, tiempo, parser "Nombre.edad", menciones
+│   └── utils/               ← ids, tiempo, parser "Nombre.edad", menciones,
+│                              platform.js (Termux/LAN), lid.js (identidades @lid),
+│                              instance-lock.js (una sola copia en marcha)
 ├── web/
 │   ├── server.js            ← Express: API + estáticos + SSE
 │   ├── routes/              ← auth, instances, groups, requests, stats
@@ -143,9 +149,10 @@ Project/
 ├── tools/
 │   └── simulator.js         ← SIMULADOR EXPLÍCITO de WhatsApp (no es el bot real):
 │                              permite probar comandos en terminal sin número
-├── scripts/                 ← doctor.js, db-inspect.js, db-reset.js
+├── scripts/                 ← doctor.js, db-inspect.js, db-reset.js, link.js (npm run vincular),
+│                              termux-setup.sh y termux-start.sh
 ├── tests/                   ← tests unitarios y de integración de servicios
-├── data/       (git-ignored)← versova.db
+├── data/       (git-ignored)← versova.db (+ versova.pid mientras corre)
 ├── sessions/   (git-ignored)← credenciales por sub-bot (¡secretos!)
 └── logs/       (git-ignored)
 ```

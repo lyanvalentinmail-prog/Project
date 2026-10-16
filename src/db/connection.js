@@ -1,21 +1,47 @@
 /**
  * 𓆩 ☕ 𓆪  VÉRSOVA · conexión SQLite
  * ────────────────────────────────────────────────────────────────
- * Una única conexión compartida (mejor-sqlite3 es síncrono y seguro
- * dentro de un proceso), en modo WAL para que el panel web pueda leer
- * mientras el bot escribe. Las credenciales de WhatsApp NO van aquí:
- * viven en sesiones cifradas por Signal dentro de `sessions/`.
+ * Una única conexión compartida (el motor es síncrono y seguro dentro
+ * de un proceso), en modo WAL para que el panel web pueda leer
+ * mientras el bot escribe. El motor (better-sqlite3 o node:sqlite en
+ * Termux) lo elige `driver.js`. Las credenciales de WhatsApp NO van
+ * aquí: viven en sesiones cifradas por Signal dentro de `sessions/`.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import Database from 'better-sqlite3';
+import { openDatabase } from './driver.js';
 import { env, ensurePrivateDir } from '../config/env.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-/** @type {Database.Database | null} */
+/** Conexión activa (API de better-sqlite3, venga del motor que venga). */
 let db = null;
+/** Modo de diario efectivo (wal, delete…) para diagnósticos. */
+let journalMode = null;
+
+const JOURNAL_MODES = new Set(['WAL', 'DELETE', 'TRUNCATE', 'PERSIST', 'MEMORY']);
+
+/**
+ * WAL necesita memoria compartida (mmap) junto al archivo. Algunos
+ * almacenamientos de Android (/sdcard) no la permiten: entonces se usa
+ * el diario clásico en lugar de fallar al arrancar.
+ */
+function applyJournalMode(database) {
+  const wanted = String(process.env.DB_JOURNAL_MODE ?? 'WAL').trim().toUpperCase();
+  const preferred = JOURNAL_MODES.has(wanted) ? wanted : 'WAL';
+  for (const mode of [...new Set([preferred, 'DELETE'])]) {
+    try {
+      const applied = String(database.pragma(`journal_mode = ${mode}`, { simple: true }) ?? '').toLowerCase();
+      // prueba real de lectura: con /sdcard el fallo de WAL aparece aquí
+      database.prepare('SELECT COUNT(*) AS n FROM sqlite_master').get();
+      return applied || mode.toLowerCase();
+    } catch {
+      /* se prueba el siguiente modo */
+    }
+  }
+  return null;
+}
 
 /** Versiones de esquema aplicadas en orden. Cada una debe ser idempotente. */
 const MIGRATIONS = [
@@ -65,10 +91,10 @@ export function getDb() {
 export function initDatabase(dbPath = env.dbPath) {
   if (db) return db;
 
-  ensurePrivateDir(path.dirname(dbPath));
-  const database = new Database(dbPath);
+  if (dbPath !== ':memory:') ensurePrivateDir(path.dirname(dbPath));
+  const database = openDatabase(dbPath);
 
-  database.pragma('journal_mode = WAL');
+  journalMode = applyJournalMode(database);
   database.pragma('synchronous = NORMAL');
   database.pragma('foreign_keys = ON');
   database.pragma('busy_timeout = 5000');
@@ -103,12 +129,22 @@ export function initDatabase(dbPath = env.dbPath) {
 export function closeDatabase() {
   if (!db) return;
   try {
-    db.pragma('wal_checkpoint(TRUNCATE)');
+    if (journalMode === 'wal') db.pragma('wal_checkpoint(TRUNCATE)');
+  } catch {
+    /* sin WAL que vaciar */
+  }
+  try {
     db.close();
   } catch {
     /* ya cerrada */
   }
   db = null;
+  journalMode = null;
+}
+
+/** Modo de diario efectivo de la conexión abierta (o null si no hay). */
+export function currentJournalMode() {
+  return journalMode;
 }
 
 /**

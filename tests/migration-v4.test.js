@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import Database from 'better-sqlite3';
+import { openDatabase } from '../src/db/driver.js';
 import { initDatabase, closeDatabase } from '../src/db/connection.js';
 
 test('v4 habilita bots antiguos sin alterar sesiones ni autostart y es idempotente', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'versova-v4-'));
   const dbPath = path.join(dir, 'migration.db');
   try {
-    const old = new Database(dbPath);
+    const old = openDatabase(dbPath);
     for (const schema of ['schema.sql', 'schema-credits.sql', 'schema-v3.sql']) {
       old.exec(fs.readFileSync(new URL(`../src/db/${schema}`, import.meta.url), 'utf8'));
     }

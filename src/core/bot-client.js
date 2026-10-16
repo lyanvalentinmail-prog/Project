@@ -34,27 +34,40 @@ import { handleCommandMessage, parseCommand } from './router.js';
 import * as events from './events.js';
 import { instancesRepo, statsRepo } from '../db/index.js';
 import { normalizeJid, isGroupJid } from '../utils/ids.js';
+import { LidMap, isLidJid, participantJid, botIsAdminIn } from '../utils/lid.js';
 import { backoff, sleep } from '../utils/misc.js';
 
 const log = scoped('client');
 
-/** Versión de WhatsApp Web conocida (fallback si no hay red). */
-const FALLBACK_VERSION = [2, 3000, 1025124219];
+/**
+ * Sin red no se fija ninguna versión: Baileys usa la que trae incluida
+ * (siempre más nueva que cualquier número escrito a mano aquí).
+ */
+const FALLBACK_VERSION = null;
+const VERSION_LOOKUP_TIMEOUT_MS = 8000;
 let cachedVersion = null;
 
+/** Última versión de WhatsApp Web publicada por Baileys (o null → la incluida). */
 async function resolveVersion() {
-  if (cachedVersion && Date.now() - cachedVersion.at < env.waVersionCacheTtlMs) return cachedVersion.version;
-  try {
-    const { version } = await fetchLatestBaileysVersion();
-    if (Array.isArray(version) && version.length === 3) {
-      cachedVersion = { version, at: Date.now() };
-      return version;
-    }
-  } catch (error) {
-    log.debug({ err: error }, 'no se pudo obtener la última versión de WA Web, usando la local');
-  }
-  cachedVersion = { version: FALLBACK_VERSION, at: Date.now() };
-  return FALLBACK_VERSION;
+  if (cachedVersion && Date.now() - cachedVersion.at < cachedVersion.ttl) return cachedVersion.version;
+  // fetchLatestBaileysVersion no tiene timeout propio: una red lenta no debe frenar el arranque
+  let timer = null;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(null), VERSION_LOOKUP_TIMEOUT_MS);
+    timer.unref?.();
+  });
+  const result = await Promise.race([fetchLatestBaileysVersion().catch(() => null), timeout]);
+  clearTimeout(timer);
+  const valid = Array.isArray(result?.version) && result.version.length === 3 && result.version.every(Number.isInteger);
+  const latest = valid && result.isLatest !== false;
+  if (!latest) log.debug({ error: result?.error?.message }, 'sin versión remota de WA Web: se usa la incluida en Baileys');
+  cachedVersion = {
+    version: valid ? result.version : FALLBACK_VERSION,
+    at: Date.now(),
+    // si falló, se reintenta pronto; si no, se respeta la caché configurada
+    ttl: latest ? env.waVersionCacheTtlMs : 10 * 60_000,
+  };
+  return cachedVersion.version;
 }
 
 export class BotClient extends EventEmitter {
@@ -95,6 +108,12 @@ export class BotClient extends EventEmitter {
 
     this._sendQueue = Promise.resolve();
     this._metadataCache = new Map();
+    /** Equivalencias LID ↔ número que WhatsApp va revelando. */
+    this.lids = new LidMap();
+    /** LID propio del bot (en grupos con LID aparece así en la lista de participantes). */
+    this.lid = null;
+    /** Cada start() recibe un número: un stop() o un start() posterior invalida los anteriores. */
+    this._startAttempt = 0;
     // También deduplica notify/append y los ecos de nuestros propios envíos.
     this._seenMessages = new Map();
     this._logger = baileysLogger(`wa:${this.id}`);
@@ -168,6 +187,7 @@ export class BotClient extends EventEmitter {
 
   async start() {
     if (this.sock) return this.snapshot();
+    const attempt = ++this._startAttempt;
     this.stopping = false;
     this.pairingRequested = false;
     this._pairingReady = false;
@@ -179,11 +199,21 @@ export class BotClient extends EventEmitter {
     const { state, saveCreds } = await useMultiFileAuthState(this.sessionDir);
     const version = await resolveVersion();
 
+    // Mientras se leían las credenciales pudo llegar un stop() (o un start()
+    // más nuevo): no se abre un socket «zombi» que nadie va a cerrar.
+    if (attempt !== this._startAttempt || this.stopping || this.sock) return this.snapshot();
+
     this.saveCreds = saveCreds;
     this.authState = state;
+    const myLid = state.creds?.me?.lid ? normalizeJid(state.creds.me.lid) : null;
+    if (myLid) {
+      this.lid = myLid;
+      this.lids.learn(myLid, state.creds?.me?.id);
+    }
 
     const sock = makeWASocket({
-      version,
+      // sin versión remota se omite la clave: `version: undefined` anularía la de Baileys
+      ...(version ? { version } : {}),
       auth: state,
       logger: this._logger,
       browser: IDENTITY.browser,
@@ -206,6 +236,7 @@ export class BotClient extends EventEmitter {
 
   async stop({ reason = 'manual' } = {}) {
     this.stopping = true;
+    this._startAttempt += 1;
     const sock = this.sock;
     this.sock = null;
     this._pairingReady = false;
@@ -244,9 +275,18 @@ export class BotClient extends EventEmitter {
   /* ── eventos de Baileys ─────────────────────────────────────── */
 
   _bindEvents(sock) {
-    sock.ev.on('creds.update', () => {
+    sock.ev.on('creds.update', (update) => {
       if (this.sock !== sock) return;
+      if (update?.me?.lid) {
+        this.lid = normalizeJid(update.me.lid);
+        this.lids.learn(this.lid, update.me.id ?? this.jid);
+      }
       this.saveCreds?.().catch((error) => log.error({ err: error }, 'no se pudieron guardar las credenciales'));
+    });
+
+    // WhatsApp revela equivalencias LID ↔ número a medida que las conoce
+    sock.ev.on('lid-mapping.update', (mapping) => {
+      for (const pair of [].concat(mapping ?? [])) this.lids.learn(pair?.lid, pair?.pn);
     });
 
     sock.ev.on('connection.update', async (update) => {
@@ -269,6 +309,11 @@ export class BotClient extends EventEmitter {
         this.reconnectAttempts = 0;
         this.connectedAt = Date.now();
         const userJid = sock.user?.id ? normalizeJid(jidNormalizedUser(sock.user.id)) : null;
+        const ownLid = sock.user?.lid ?? this.authState?.creds?.me?.lid ?? null;
+        if (ownLid) {
+          this.lid = normalizeJid(ownLid);
+          this.lids.learn(this.lid, userJid);
+        }
         this._setStatus('open', {
           qr: null,
           jid: userJid,
@@ -292,6 +337,17 @@ export class BotClient extends EventEmitter {
         if (statusCode === DisconnectReason.loggedOut) {
           this._setStatus('loggedOut', { qr: null, pairingCode: null, error: 'Sesión cerrada desde el teléfono (loggedOut).' });
           this.emit('log', { level: 'warn', message: 'sesión cerrada: hay que volver a vincular' });
+          return;
+        }
+
+        if (statusCode === DisconnectReason.connectionReplaced) {
+          // 440: otra copia del bot (otro PC, Termux, Render…) abrió esta misma
+          // sesión. Reconectar solo haría que se expulsen mutuamente sin fin.
+          this._setStatus('closed', {
+            qr: null,
+            error: '440 · La sesión se abrió en otro lugar (otra copia del bot usa estas credenciales). Detén la otra copia y vuelve a conectar este sub-bot.',
+          });
+          this.emit('log', { level: 'warn', message: 'sesión reemplazada por otra conexión: no se reconecta automáticamente' });
           return;
         }
 
@@ -334,6 +390,8 @@ export class BotClient extends EventEmitter {
 
     sock.ev.on('group-participants.update', async (event) => {
       this._metadataCache.delete(normalizeJid(event.id));
+      this.learnParticipants(event.participants);
+      this.lids.learn(event.author, event.authorPn);
       try {
         await events.onParticipantsUpdate({ client: this, instance: this.instance, event });
       } catch (error) {
@@ -350,20 +408,64 @@ export class BotClient extends EventEmitter {
       }
     });
 
-    sock.ev.on('contacts.update', (updates) => {
-      for (const contact of updates ?? []) {
-        if (contact.id && (contact.name || contact.notify)) {
-          this._contacts.set(normalizeJid(contact.id), contact.notify ?? contact.name?.slice(-1)?.data ?? null);
-        }
-      }
+    sock.ev.on('groups.upsert', (groups) => {
+      for (const group of groups ?? []) this.learnParticipants(group?.participants);
     });
+
+    const onContacts = (contacts) => {
+      for (const contact of contacts ?? []) {
+        if (!contact?.id) continue;
+        this.lids.learnEntry(contact);
+        const name = contact.notify ?? contact.name ?? contact.verifiedName ?? null;
+        if (name) this._contacts.set(this.toPn(contact.id), String(name));
+      }
+    };
+    sock.ev.on('contacts.upsert', onContacts);
+    sock.ev.on('contacts.update', onContacts);
   }
 
   /** Contactos conocidos (para nombres en la bienvenida). */
   _contacts = new Map();
 
   contactName(jid) {
-    return this._contacts.get(normalizeJid(jid)) ?? null;
+    return this._contacts.get(this.toPn(jid)) ?? this._contacts.get(normalizeJid(jid)) ?? null;
+  }
+
+  /* ── identidades: LID ↔ número ──────────────────────────────── */
+
+  /** Número equivalente a un LID si se conoce (cualquier otro jid se normaliza). */
+  toPn(jid) {
+    const pn = this.lids.toPn(jid);
+    // el LID propio siempre equivale al número del bot
+    if (pn && this.lid && pn === this.lid && this.jid) return normalizeJid(this.jid);
+    return pn;
+  }
+
+  /** Como toPn, consultando además el almacén de Baileys (en disco, sin red). */
+  async resolveUser(jid) {
+    const known = this.lids.toPn(jid);
+    if (!known || !isLidJid(known)) return known;
+    try {
+      const pn = await this.sock?.signalRepository?.lidMapping?.getPNForLID?.(known);
+      if (pn && this.lids.learn(known, pn)) return this.lids.toPn(known);
+    } catch {
+      /* sin equivalencia conocida: se usa el LID */
+    }
+    return known;
+  }
+
+  /** ¿Ese jid (número o LID) es el propio bot? */
+  isMe(jid) {
+    const normalized = normalizeJid(jid);
+    if (!normalized) return false;
+    const me = normalizeJid(this.jid);
+    if (me && (normalized === me || this.lids.toPn(normalized) === me)) return true;
+    return Boolean(this.lid) && normalized === this.lid;
+  }
+
+  /** Aprende equivalencias de una lista de participantes (texto u objetos). */
+  learnParticipants(list) {
+    for (const entry of list ?? []) this.lids.learnEntry(entry);
   }
 
   async _handleMessage(raw, type) {
@@ -380,6 +482,7 @@ export class BotClient extends EventEmitter {
       if (!Number.isFinite(timestamp) || age < -30_000 || age > 120_000) return;
     }
     if (!this._rememberMessage(raw.key)) return;
+    this.lids.learnKey(raw.key);
 
     statsRepo.bump('messages');
 
@@ -455,12 +558,36 @@ export class BotClient extends EventEmitter {
     const cached = this.cachedGroupMetadata(key);
     if (cached) return cached;
     const data = await this.sock.groupMetadata(key);
+    this.learnParticipants(data?.participants);
     this._metadataCache.set(key, { at: Date.now(), data });
     return data;
   }
 
+  /**
+   * Añadir se hace por número. Para expulsar/promover/degradar, en los grupos
+   * con LID WhatsApp espera el id con el que la persona figura en el grupo.
+   */
   async groupParticipantsUpdate(jid, participants, action) {
-    return this.sock.groupParticipantsUpdate(normalizeJid(jid), participants.map(normalizeJid), action);
+    const groupJid = normalizeJid(jid);
+    let targets = (participants ?? [])
+      .map((entry) => normalizeJid(typeof entry === 'string' ? entry : entry?.id ?? entry?.jid))
+      .filter(Boolean);
+    if (action === 'add') {
+      targets = targets.map((target) => this.toPn(target));
+    } else {
+      const metadata = await this.groupMetadata(groupJid).catch(() => null);
+      const members = metadata?.participants ?? [];
+      targets = targets.map((target) => {
+        const canonical = this.toPn(target);
+        const match = members.find((member) => {
+          const id = normalizeJid(member?.id ?? member?.jid);
+          return id === target || participantJid(member, this) === canonical;
+        });
+        return match ? normalizeJid(match.id ?? match.jid) : target;
+      });
+    }
+    this._metadataCache.delete(groupJid);
+    return this.sock.groupParticipantsUpdate(groupJid, targets, action);
   }
 
   async groupSettingUpdate(jid, setting) {
@@ -473,7 +600,9 @@ export class BotClient extends EventEmitter {
   }
 
   async groupFetchAllParticipating() {
-    return this.sock.groupFetchAllParticipating();
+    const all = await this.sock.groupFetchAllParticipating();
+    for (const metadata of Object.values(all ?? {})) this.learnParticipants(metadata?.participants);
+    return all;
   }
 
   /** Todas las rutas (QR inicial, panel y comandos) comparten una petición. */
@@ -563,8 +692,7 @@ export class BotClient extends EventEmitter {
     if (!isGroupJid(groupJid)) return false;
     const metadata = await this.groupMetadata(groupJid).catch(() => null);
     if (!metadata) return false;
-    const me = normalizeJid(this.jid);
-    return (metadata.participants ?? []).some((p) => normalizeJid(p.id) === me && Boolean(p.admin));
+    return botIsAdminIn(metadata, this);
   }
 
   /** Ruta de la carpeta de credenciales (para borrarla desde el panel). */

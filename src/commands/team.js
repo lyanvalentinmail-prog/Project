@@ -6,6 +6,7 @@ import * as registration from '../services/registration.service.js';
 import { groupsRepo, usersRepo } from '../db/index.js';
 import { fail, ok } from '../services/result.js';
 import { checkPermission } from '../security/permissions.js';
+import { adminsFromMetadata, participantJid } from '../utils/lid.js';
 
 export const teamCommands = [
   {
@@ -95,10 +96,11 @@ export const teamCommands = [
         waCreatedAt: metadata.creation ? Number(metadata.creation) * 1000 : null,
         size: participants.length,
       });
-      groupsRepo.syncAdmins(ctx.group.groupId, participants.filter((p) => p.admin));
+      groupsRepo.syncAdmins(ctx.group.groupId, adminsFromMetadata(metadata, ctx.client));
       groupsRepo.markSynced(ctx.group.groupId);
       for (const participant of participants) {
-        registration.syncMemberReturned(ctx, participant.id ?? participant.jid);
+        const jid = participantJid(participant, ctx.client);
+        if (jid) registration.syncMemberReturned(ctx, jid);
       }
       return ok('team.config.updated', {
         key: 'Sincronización',

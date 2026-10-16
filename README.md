@@ -9,9 +9,10 @@
 
 `Registro · Personajes · Gestión · Interacción · Administración · Base de datos persistente`
 
-[![Node](https://img.shields.io/badge/node-%E2%89%A522-8fbc72)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/node-%E2%89%A522.13-8fbc72)](https://nodejs.org)
+[![Termux](https://img.shields.io/badge/Termux-Android-8fbc72)](docs/TERMUX.md)
 [![Baileys](https://img.shields.io/badge/baileys-7.0.0--rc14-c8a27a)](https://github.com/WhiskeySockets/Baileys)
-[![tests](https://img.shields.io/badge/tests-179%20pass-8fbc72)](#pruebas)
+[![tests](https://img.shields.io/badge/tests-248%20pass-8fbc72)](#pruebas)
 [![version](https://img.shields.io/badge/versi%C3%B3n-1.0-e8c9a0)](#)
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/lyanvalentinmail-prog/Project)
 
@@ -37,10 +38,14 @@ personajes y aprobar solicitudes desde el navegador.
 
 ## 𓆩 𖤐 𓆪 Requisitos
 
-- **Node.js 22 o superior** (`node -v`)
+- **Node.js 22.13 o superior** (`node -v`)
 - Un **número de WhatsApp** por sub-bot (recomendado: números secundarios dedicados)
 - Que ese número **te permita ser administrador** en los grupos donde quieras moderar
 - npm (viene con Node)
+
+Funciona en **Windows, macOS, Linux, un VPS, Render y Android (Termux)**. La base de
+datos es SQLite: se usa `better-sqlite3` si está instalado y, si no (o si no se puede
+compilar, como en Android), el SQLite integrado en Node. Nada que configurar.
 
 ---
 
@@ -65,12 +70,40 @@ npm start
 Al arrancar verás algo así:
 
 ```
-𓆩 ☕ 𓆪  VÉRSOVA v1.0 · prefijos # - + . / (por sub-bot)
-Base de datos  ⁙ data/versova.db
-Comandos       ⁙ 54 registrados
-Panel web      ⁙ http://localhost:3000
+✓ Bot VÉRSOVA v1.0 · prefijos # - + . / (por sub-bot)
+☕ Plataforma     ⁙ Linux · Node v22.x · x64
+☕ Base de datos  ⁙ /ruta/al/proyecto/data/versova.db
+☕ Motor          ⁙ better-sqlite3 · SQLite 3.x · WAL
+☕ Comandos       ⁙ 53 registrados
+☕ Panel web      ⁙ http://localhost:3000
+☕ En tu red      ⁙ http://192.168.1.50:3000
 ⚠ No hay sub-bots con inicio automático. Abre el panel web y vincula uno con WhatsApp.
 ```
+
+Solo puede haber **una copia en marcha por carpeta de datos**: si lo lanzas dos veces,
+la segunda se niega a arrancar (dos copias con la misma sesión de WhatsApp se
+desconectan entre sí).
+
+---
+
+## 𓆩 📱 𓆪 Android (Termux)
+
+VÉRSOVA también corre en un teléfono Android con [Termux](https://f-droid.org/packages/com.termux/)
+(instálalo desde F-Droid o GitHub, no desde Google Play). Sin root y sin compilar nada:
+
+```bash
+pkg update -y && pkg install -y git
+git clone https://github.com/lyanvalentinmail-prog/Project.git ~/versova
+cd ~/versova && bash scripts/termux-setup.sh     # Node.js, dependencias, .env y diagnóstico
+npm run termux                                   # bot + panel, con wake lock y reinicio automático
+```
+
+Abre **http://localhost:3000** en el navegador del teléfono para vincular el bot, o hazlo
+desde la propia terminal con `npm run vincular` (pairing code o QR en la consola).
+Para actualizar: `git pull && npm run termux:setup`.
+
+Guía completa (batería, Android 12+, copias de seguridad, problemas frecuentes):
+**[docs/TERMUX.md](docs/TERMUX.md)**.
 
 ---
 
@@ -121,7 +154,7 @@ carpeta de credenciales en `sessions/` (fuera de git) y su propio prefijo.
 
 ---
 
-## 𓆩 ⛓️ 𓆪 Comandos (54)
+## 𓆩 ⛓️ 𓆪 Comandos (53)
 
 Cada bot usa el **prefijo que elegiste al crearlo** (`#` `-` `+` `.` `/`, por defecto `.`)
 · idioma español · `«prefijo»menu` muestra el menú oficial del team y `«prefijo»help <sección>`
@@ -151,17 +184,17 @@ src/
 ├── config/               entorno, identidad, alias y valores por defecto
 ├── core/                 adaptador Baileys, orquestador de sub-bots, router,
 │                         contexto, eventos de grupo, sincronización, mantenimiento
-├── db/                   conexión WAL, esquema SQL y repositorios
+├── db/                   conexión WAL (better-sqlite3 o node:sqlite), esquema SQL y repositorios
 ├── services/             reglas de negocio (registro, roles, team, social, moderación)
-├── commands/             52 comandos organizados por categoría
+├── commands/             53 comandos organizados por categoría
 ├── security/             permisos, validación, rate-limit, confirmaciones
 ├── design/               tema, 71 plantillas y menú oficial
-└── utils/                ids, tiempo, texto, hash
+└── utils/                ids, tiempo, texto, hash, plataforma (Termux), LID, instancia única
 web/                      panel: servidor Express, API REST, SSE, auth y frontend
 tools/simulator.js        banco de pruebas de comandos en terminal (NO es el bot real)
-scripts/                  doctor, inspección y reinicio de la base de datos
-tests/                    179 pruebas con node:test
-docs/                     arquitectura, base de datos, comandos y limitaciones
+scripts/                  doctor, base de datos, Termux (instalar/arrancar) y vinculación por terminal
+tests/                    248 pruebas con node:test
+docs/                     arquitectura, base de datos, comandos, limitaciones y Termux
 ```
 
 La regla de diseño: **los servicios no saben que existe WhatsApp**. Devuelven
@@ -177,7 +210,10 @@ Por eso se puede probar todo sin vincular un número.
 | `npm start` | Bot + panel web |
 | `npm run bot` | Solo el bot (sin panel) |
 | `npm run web` | Solo el panel web |
-| `npm test` | 179 pruebas (servicios, router, base de datos, API) |
+| `npm run vincular` | Vincula un sub-bot desde la terminal (pairing code o `-- --qr`) |
+| `npm run termux` | Termux: bot + panel con wake lock y reinicio automático |
+| `npm run termux:setup` | Termux: instala/actualiza Node.js, dependencias y `.env` |
+| `npm test` | 248 pruebas (servicios, router, base de datos, API, Termux) |
 | `npm run sim` | Simulador interactivo de comandos en terminal |
 | `npm run sim -- --demo` | Demo guiada con 81 escenarios reales |
 | `npm run doctor` | Diagnóstico: Node, dependencias, BD, carpetas, `.env`, conectividad |
@@ -205,7 +241,7 @@ herramienta de pruebas y jamás se hace pasar por una conexión real.
 
 ```bash
 npm test
-# tests 179 · pass 179 · fail 0
+# tests 248 · pass 248 · fail 0
 ```
 
 Cubren: registro y duplicados, aprobación por respuesta/folio/nombre, resolución atómica
@@ -219,6 +255,9 @@ También se prueba el adaptador `messages.upsert`: comandos propios y de tercero
 chats privados, mensajes offline recientes, deduplicación, ecos del bot, mensajes
 encapsulados y caché de metadatos. El socket se sustituye en las pruebas: no requieren
 credenciales ni verifican una conexión real con WhatsApp.
+Además: los dos motores SQLite (`better-sqlite3` y `node:sqlite`, `DB_DRIVER=node npm test`),
+las identidades LID de WhatsApp (`@lid`), la detección de Termux, la vinculación por
+terminal, los scripts de instalación/arranque y el candado de instancia única.
 
 ---
 
@@ -263,8 +302,9 @@ Detalle completo, con los códigos de error reales y sus mitigaciones:
 |---|---|
 | [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md) | Arquitectura, tecnologías, estructura, base de datos, funcionamiento por sistema, limitaciones y orden de desarrollo |
 | [docs/BASE_DE_DATOS.md](docs/BASE_DE_DATOS.md) | Esquema campo por campo, índices, invariantes y copias de seguridad |
-| [docs/COMANDOS.md](docs/COMANDOS.md) | Los 52 comandos con permisos, ejemplos, alias y límites |
+| [docs/COMANDOS.md](docs/COMANDOS.md) | Los 53 comandos con permisos, ejemplos, alias y límites |
 | [docs/LIMITACIONES.md](docs/LIMITACIONES.md) | Lo que WhatsApp no permite y cómo lo resuelve el bot |
+| [docs/TERMUX.md](docs/TERMUX.md) | Ejecutar el bot en Android con Termux: instalación, 24/7, actualización y problemas frecuentes |
 
 ---
 
@@ -284,14 +324,14 @@ Puedes desplegar VÉRSOVA en **Render de forma gratuita** con un solo clic usand
 2. Render leerá automáticamente la configuración de `render.yaml`:
    - **Servicio:** Web Service (`versova-bot`)
    - **Plan:** Free (gratuito)
-   - **Runtime:** Node 22
+   - **Runtime:** Node 22 (≥ 22.13)
    - **Health check:** `/api/health`
 3. En la pantalla de creación del Blueprint, introduce tu número en `OWNER_NUMBERS` (formato internacional sin `+`, ej. `5215512345678`).
 4. Haz clic en **Apply**. Render compilará e iniciará el bot y el panel web automáticamente.
 5. Al terminar el despliegue, abre la URL asignada por Render (ej. `https://versova-bot.onrender.com`).
 6. **Panel abierto:** el dashboard no pide contraseña. Cada bot queda listo al vincular
    WhatsApp desde el panel, sin clave de activación.
-7. Inicia sesión en el panel, ve a **Sub-bots → Crear** y vincula tu número mediante **QR** o **Pairing Code**.
+7. En el panel ve a **Registrar** (o **Mis Bots → Crear Bot**) y vincula tu número mediante **QR** o **Pairing Code**.
 
 ### ⚠ Consideraciones del plan gratuito de Render
 
@@ -315,7 +355,8 @@ npm start                 # o con pm2: pm2 start src/index.js --name versova
 ```
 
 Recomendado detrás de un proxy inverso con HTTPS (nginx/caddy). Copia de seguridad:
-`data/versova.db` y `sessions/`.
+`data/versova.db` y `sessions/`. Si `better-sqlite3` no compila en tu servidor, la
+instalación sigue igual y el bot usa el SQLite integrado en Node.
 
 ---
 

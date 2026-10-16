@@ -4,7 +4,8 @@
  * Fachada única: el resto del proyecto importa `db` desde aquí y
  * nunca toca SQL directamente.
  */
-export { getDb, initDatabase, closeDatabase, tx, meta } from './connection.js';
+export { getDb, initDatabase, closeDatabase, tx, meta, currentJournalMode } from './connection.js';
+export { driverInfo } from './driver.js';
 
 export { instancesRepo, ALLOWED_PREFIXES, normalizePrefix } from './repositories/instances.repo.js';
 export { groupsRepo } from './repositories/groups.repo.js';
