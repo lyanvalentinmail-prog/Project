@@ -44,6 +44,7 @@ export const AUDIT_ACTIONS = Object.freeze([
   'instance.stop',
   'instance.paired',
   'instance.logout',
+  'instance.admins.updated',
   'security.ratelimit',
   'security.denied',
   'error.command',

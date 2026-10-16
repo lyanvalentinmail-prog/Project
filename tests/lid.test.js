@@ -17,7 +17,7 @@ const { sim, plain } = await import('./_harness.js');
 const { BotClient, resolveVersion } = await import('../src/core/bot-client.js');
 const { createContext } = await import('../src/core/context.js');
 const { clearGroupCache } = await import('../src/core/group-sync.js');
-const { groupsRepo } = await import('../src/db/index.js');
+const { groupsRepo, instancesRepo } = await import('../src/db/index.js');
 const { LidMap, participantJid, adminsFromMetadata, botIsAdminIn, isLidJid } = await import('../src/utils/lid.js');
 
 const LGROUP = '120363999999999999@g.us';
@@ -131,6 +131,30 @@ test('en un grupo con LID el owner conserva su rango y el bot se sabe admin', as
   assert.equal(ctx.author.isBotOwner, true);
   assert.equal(ctx.group.botIsAdmin, true);
   assert.equal(await client.isBotAdmin(LGROUP), true);
+});
+
+test('el staff configurado por número se reconoce con LID y sufijos de dispositivo', async () => {
+  const { client } = lidFixture();
+  instancesRepo.setAdminNumbers(sim.instance.id, [MEMBER_PN.split('@')[0], HIDDEN_PN.split('@')[0]]);
+  try {
+    for (const raw of [
+      groupMessage({ participant: MEMBER_LID }), // número aprendido de la metadata
+      groupMessage({ participant: HIDDEN_LID }), // número aprendido del almacén de Baileys
+      groupMessage({ participant: MEMBER_LID, participantAlt: MEMBER_PN.replace('@', ':7@') }),
+      { key: { remoteJid: MEMBER_LID, remoteJidAlt: MEMBER_PN, fromMe: false }, message: { conversation: '.ping' } },
+    ]) {
+      const ctx = await createContext({ raw, instance: sim.instance, client });
+      assert.equal(ctx.author.isInstanceAdmin, true);
+      assert.equal(ctx.author.isAdmin, true);
+      assert.equal(ctx.author.isGroupAdmin, false);
+      assert.equal(ctx.author.isBotOwner, false);
+      assert.equal(ctx.author.rank, 2);
+    }
+    const unknown = await createContext({ raw: groupMessage({ participant: UNKNOWN_LID }), instance: sim.instance, client });
+    assert.equal(unknown.author.isInstanceAdmin, false, 'sin equivalencia no se inventa un número');
+  } finally {
+    instancesRepo.setAdminNumbers(sim.instance.id, []);
+  }
 });
 
 test('sin participantAlt, el LID se traduce con la lista de participantes', async () => {

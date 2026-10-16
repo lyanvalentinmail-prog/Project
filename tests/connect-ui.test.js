@@ -118,3 +118,132 @@ test('renovación manual envía force y bloquea peticiones duplicadas', async ()
   assert.equal(ui.panelState.pairing.formatted, 'EFGH-5678');
   assert.equal(ui.panelState.pairing.loading, false);
 });
+
+/* ── editor de bot: números de staff ─────────────────────────── */
+
+function editingPanel(instance = { id: 'demo', name: 'Mi bot', prefix: '#', adminNumbers: ['59899123456', '5215512345678'] }) {
+  const ui = panel();
+  const modal = { innerHTML: '' };
+  const layer = { hidden: true };
+  const button = { innerHTML: 'Guardar cambios', textContent: '', disabled: false };
+  const error = { hidden: true, textContent: '' };
+  class Form {
+    id = 'edit-instance-form';
+    dataset = { id: instance.id };
+    fields = { 'instance-name': instance.name, 'instance-prefix': instance.prefix, 'instance-admin-numbers': (instance.adminNumbers || []).join('\n') };
+    querySelector(selector) { return selector === 'button[type="submit"]' ? button : error; }
+    setAttribute() {}
+    removeAttribute() {}
+  }
+  const form = new Form();
+  const toasts = [];
+  ui.HTMLFormElement = Form;
+  ui.FormData = class { constructor(form) { this.form = form; } get(name) { return this.form.fields[name]; } };
+  ui.document = {
+    querySelector: (selector) => ({ '#modal-content': modal, '#modal-layer': layer, '#edit-instance-form': form }[selector]),
+    body: { classList: { add() {}, remove() {} } },
+  };
+  ui.showToast = (message, type) => toasts.push({ message, type });
+  ui.loadAdminData = async () => {};
+  ui.scheduleRender = () => {};
+  ui.stopLinkWatch = () => {};
+  ui.panelState.instances = [instance];
+  ui.openEditInstance(instance);
+  return { ui, modal, layer, button, error, form, toasts };
+}
+
+test('Editar bot muestra una lista de admins precargada y explica el alcance del permiso', () => {
+  const { modal, layer } = editingPanel();
+  assert.equal(layer.hidden, false);
+  assert.match(modal.innerHTML, /name="instance-admin-numbers"/);
+  assert.match(modal.innerHTML, />59899123456\n5215512345678<\/textarea>/);
+  assert.match(modal.innerHTML, /código de país/);
+  assert.match(modal.innerHTML, /staff only/);
+  assert.match(modal.innerHTML, /No otorga permisos de owner/);
+  assert.match(modal.innerHTML, /borra el número y guarda/);
+  assert.match(modal.innerHTML, /role="alert" hidden/);
+  const legacy = editingPanel({ id: 'legacy', name: 'Antiguo', prefix: '.' });
+  assert.match(legacy.modal.innerHTML, /><\/textarea>/);
+  assert.doesNotMatch(legacy.modal.innerHTML, /undefined/);
+  const escaped = editingPanel({ id: 'safe', name: '<script>', prefix: '.', adminNumbers: ['</textarea><script>'] });
+  assert.doesNotMatch(escaped.modal.innerHTML, /<script>/);
+  assert.match(escaped.modal.innerHTML, /&lt;\/textarea&gt;&lt;script&gt;/);
+});
+
+test('guardar envía números junto al nombre y prefijo y actualiza el editor sin recargar', async () => {
+  const { ui, form, layer } = editingPanel();
+  form.fields['instance-name'] = '  Nuevo nombre  ';
+  form.fields['instance-prefix'] = '+';
+  form.fields['instance-admin-numbers'] = '+598 99 123 456, 5215512345678';
+  let request;
+  ui.request = async (url, options) => {
+    request = { url, options };
+    return { instance: { id: 'demo', name: 'Nuevo nombre', prefix: '+', adminNumbers: ['59899123456', '5215512345678'] } };
+  };
+  let prevented = false;
+  await ui.handleSubmit({ target: form, preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(request.url, '/instances/demo');
+  assert.equal(request.options.method, 'PATCH');
+  assert.deepEqual(JSON.parse(JSON.stringify(request.options.body)), { name: 'Nuevo nombre', prefix: '+', adminNumbers: '+598 99 123 456, 5215512345678' });
+  assert.equal(layer.hidden, true);
+  assert.equal(ui.panelState.instances[0].name, 'Nuevo nombre');
+  assert.equal(ui.panelState.instances[0].prefix, '+');
+  ui.openEditInstance(ui.panelState.instances[0]);
+  assert.equal(layer.hidden, false);
+});
+
+test('vaciar los números envía un valor explícito para revocar el staff', async () => {
+  const { ui, form, modal } = editingPanel();
+  form.fields['instance-admin-numbers'] = '';
+  ui.request = async (_url, { body }) => {
+    assert.equal(body.adminNumbers, '');
+    return { instance: { id: 'demo', adminNumbers: [] } };
+  };
+  await ui.submitEditInstance(form);
+  ui.openEditInstance(ui.panelState.instances[0]);
+  assert.match(modal.innerHTML, /><\/textarea>/);
+  assert.doesNotMatch(modal.innerHTML, />59899123456/);
+});
+
+test('si un número es inválido no cierra el formulario ni pierde lo escrito', async () => {
+  const { ui, form, layer, button, error, toasts } = editingPanel();
+  form.fields['instance-admin-numbers'] = '123';
+  ui.request = async () => { throw new Error('Número de admin inválido en la entrada 1.'); };
+  await ui.submitEditInstance(form);
+  assert.equal(layer.hidden, false);
+  assert.equal(form.fields['instance-admin-numbers'], '123');
+  assert.equal(error.hidden, false);
+  assert.match(error.textContent, /Número de admin inválido/);
+  assert.equal(button.disabled, false);
+  assert.equal(form.dataset.saving, undefined);
+  assert.equal(toasts.at(-1).type, 'error');
+  assert.deepEqual(ui.panelState.instances[0].adminNumbers, ['59899123456', '5215512345678']);
+});
+
+test('el editor bloquea guardados duplicados mientras espera al servidor', async () => {
+  const { ui, form, button } = editingPanel();
+  let complete;
+  let requests = 0;
+  ui.request = () => {
+    requests += 1;
+    return new Promise((resolve) => { complete = resolve; });
+  };
+  const pending = ui.submitEditInstance(form);
+  assert.equal(button.disabled, true);
+  await ui.submitEditInstance(form);
+  assert.equal(requests, 1);
+  complete({ instance: { id: 'demo', adminNumbers: ['59899123456'] } });
+  await pending;
+  assert.equal(button.disabled, false);
+  assert.equal(button.innerHTML, 'Guardar cambios');
+});
+
+test('un snapshot nuevo actualiza los números al volver a abrir Editar bot', () => {
+  const { ui, modal } = editingPanel();
+  ui.panelState.revision = 'before';
+  ui.mergeSnapshot({ ok: true, revision: 'after', instances: [{ id: 'demo', name: 'Mi bot', prefix: '.', adminNumbers: ['59899000001'] }] });
+  ui.openEditInstance(ui.panelState.instances[0]);
+  assert.match(modal.innerHTML, />59899000001<\/textarea>/);
+  assert.doesNotMatch(modal.innerHTML, />59899123456/);
+});

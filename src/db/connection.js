@@ -79,6 +79,15 @@ const MIGRATIONS = [
         WHERE activated = 0`).run(Date.now(), Date.now());
     },
   },
+  {
+    version: 5,
+    name: 'números de administradores por sub-bot',
+    up(database) {
+      // Lista independiente del espejo de admins de WhatsApp: una
+      // sincronización del grupo nunca debe borrar el staff del panel.
+      database.exec("ALTER TABLE bot_instances ADD COLUMN admin_numbers TEXT NOT NULL DEFAULT '[]'");
+    },
+  },
 ];
 
 /** Devuelve la conexión activa (la crea si aún no existe). */

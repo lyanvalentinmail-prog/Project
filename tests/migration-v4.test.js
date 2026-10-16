@@ -30,7 +30,7 @@ test('v4 habilita bots antiguos sin alterar sesiones ni autostart y es idempoten
     assert.equal(rows.find((row) => row.id === 'auto').autostart, 1);
     assert.equal(rows.find((row) => row.id === 'ready').activated_at, 123);
     assert.ok(rows.every((row) => row.status === 'closed' && row.session_dir === `/sessions/${row.id}`));
-    assert.equal(db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get().value, '4');
+    assert.ok(Number(db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get().value) >= 4);
     closeDatabase();
     db = initDatabase(dbPath);
     assert.deepEqual(db.prepare('SELECT * FROM bot_instances ORDER BY id').all(), rows);

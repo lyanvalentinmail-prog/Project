@@ -11,7 +11,7 @@ Motor: **SQLite** en modo **WAL**, con uno de estos dos controladores (misma API
 `DB_JOURNAL_MODE` (por defecto `WAL`) cambia el diario; si el sistema de archivos no admite WAL,
 la conexión pasa sola a `DELETE`. El panel (Métricas) y `npm run doctor` muestran el motor real.
 
-Archivo: `data/versova.db` (fuera de git). Esquema v3. Mientras el bot corre existe
+Archivo: `data/versova.db` (fuera de git). Esquema v5. Mientras el bot corre existe
 `data/versova.pid`: impide abrir una segunda copia con los mismos datos.
 
 **Identidades LID.** WhatsApp identifica a muchos participantes con un jid `…@lid` en lugar
@@ -70,6 +70,7 @@ meta (versión de esquema, fecha de instalación)
 | `phone` | TEXT UNIQUE | Número internacional sin `+` (un número = un sub-bot) |
 | `pairing_mode` | TEXT | `'qr'` o `'pairing'` |
 | `prefix` | TEXT | Prefijo de comandos de ESTE bot: `#` `-` `+` `.` `/` (esquema v3) |
+| `admin_numbers` | TEXT (JSON) | Lista de números internacionales con acceso staff solo a ESTE bot; por defecto `[]` (v5). El repositorio la expone como array y el panel como `adminNumbers`. No altera `group_admins`. |
 | `activated` | INTEGER | Indicador histórico; por defecto 1. Desde v4 no bloquea comandos y se habilitan las instancias antiguas. |
 | `activated_at` | INTEGER | Cuándo se canjeó la clave de activación (v3) |
 | `status` | TEXT | `created · starting · qr · pairing · connecting · open · closed · error · loggedOut` |

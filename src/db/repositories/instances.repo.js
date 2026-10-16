@@ -20,6 +20,53 @@ export function normalizePrefix(input, fallback = '.') {
   };
 }
 
+/** Máximo de números con acceso staff por sub-bot. */
+export const MAX_INSTANCE_ADMINS = 50;
+
+/**
+ * Números internacionales (8–20 dígitos, sin 0 inicial).
+ * Acepta una lista de textos o números separados por comas/saltos de línea.
+ * Solo se quita formato telefónico: nunca letras, JIDs ni extensiones.
+ */
+export function normalizeAdminNumbers(input) {
+  if (typeof input !== 'string' && !Array.isArray(input)) {
+    return { ok: false, reason: 'Los admins deben ser una lista de números o texto separado por comas o saltos de línea.' };
+  }
+  const entries = Array.isArray(input) ? input : input.split(/[,;\r\n]+/);
+  const numbers = new Set();
+  for (const [index, entry] of entries.entries()) {
+    if (typeof entry !== 'string') {
+      return { ok: false, reason: `El número de admin en la entrada ${index + 1} debe ser texto con código de país.` };
+    }
+    const raw = entry.trim();
+    if (!raw) continue;
+    const digits = raw.replace(/\D/g, '');
+    if (!/^\+?[\d ().\t-]+$/.test(raw) || !/^[1-9]\d{7,19}$/.test(digits)) {
+      return {
+        ok: false,
+        reason: `Número de admin inválido en la entrada ${index + 1}. Usa de 8 a 20 dígitos con código de país, sin 0 inicial (ej. +598 99 123 456).`,
+      };
+    }
+    numbers.add(digits);
+    if (numbers.size > MAX_INSTANCE_ADMINS) {
+      return { ok: false, reason: `Puedes agregar hasta ${MAX_INSTANCE_ADMINS} números de admins por bot.` };
+    }
+  }
+  return { ok: true, value: [...numbers] };
+}
+
+/** El repositorio expone una lista, no JSON crudo; datos corruptos no dan permisos. */
+function withAdminNumbers(row) {
+  if (!row) return null;
+  let adminNumbers = [];
+  try {
+    const stored = JSON.parse(row.admin_numbers ?? '[]');
+    const check = Array.isArray(stored) ? normalizeAdminNumbers(stored) : null;
+    if (check?.ok) adminNumbers = check.value;
+  } catch { /* lista inválida: sin admins configurados */ }
+  return { ...row, admin_numbers: adminNumbers };
+}
+
 export const instancesRepo = {
   /**
    * Crea una instancia habilitada, pendiente de vincular con WhatsApp.
@@ -57,15 +104,15 @@ export const instancesRepo = {
   },
 
   byId(id) {
-    return getDb().prepare(`SELECT * FROM ${TABLE} WHERE id = ?`).get(id) ?? null;
+    return withAdminNumbers(getDb().prepare(`SELECT * FROM ${TABLE} WHERE id = ?`).get(id));
   },
 
   byPhone(phone) {
-    return getDb().prepare(`SELECT * FROM ${TABLE} WHERE phone = ?`).get(String(phone)) ?? null;
+    return withAdminNumbers(getDb().prepare(`SELECT * FROM ${TABLE} WHERE phone = ?`).get(String(phone)));
   },
 
   all() {
-    return getDb().prepare(`SELECT * FROM ${TABLE} ORDER BY created_at ASC`).all();
+    return getDb().prepare(`SELECT * FROM ${TABLE} ORDER BY created_at ASC`).all().map(withAdminNumbers);
   },
 
   count() {
@@ -110,6 +157,15 @@ export const instancesRepo = {
     getDb()
       .prepare(`UPDATE ${TABLE} SET prefix = ?, updated_at = ? WHERE id = ?`)
       .run(prefix, Date.now(), id);
+  },
+
+  /** Reemplaza el staff del sub-bot; una lista vacía revoca solo estos permisos. */
+  setAdminNumbers(id, numbers) {
+    const check = normalizeAdminNumbers(numbers);
+    if (!check.ok) throw new TypeError(check.reason);
+    getDb()
+      .prepare(`UPDATE ${TABLE} SET admin_numbers = ?, updated_at = ? WHERE id = ?`)
+      .run(JSON.stringify(check.value), Date.now(), id);
   },
 
   /** Actualiza el indicador de habilitación (compatibilidad con instancias antiguas). */

@@ -11,12 +11,14 @@ no puede desincronizarse del código.
 | Rango | Quién es | Qué puede |
 |---|---|---|
 | **owner del bot** | Números en `OWNER_NUMBERS` del `.env` | Todo, en cualquier grupo. No puede ser expulsado, baneado ni advertido. |
-| **admin del grupo** | Administradores reales de WhatsApp (espejo sincronizado) | Moderación, aprobación de personajes, configuración, anuncios, cerrar/abrir. |
+| **admin / staff** | Administradores reales de WhatsApp o números añadidos en **Mis Bots → Editar → Números de admins** | Moderación, aprobación de personajes, configuración, anuncios, cerrar/abrir. El staff configurado en el panel solo tiene acceso en ese sub-bot, sin rango de owner. |
 | **registrado** | Quien hizo `.reg <nombre.edad>` | Personajes, reservas, parejas, AFK, perfiles. |
 | **miembro** | Cualquier persona del grupo | Comandos informativos (`.menu`, `.team`, `.roles`, `.reglas`, `.ship`…). |
 
 Un admin **no** puede advertir, expulsar ni banear a otro admin ni al owner. Nadie puede
-moderarse a sí mismo ni al bot.
+moderarse a sí mismo ni al bot. La lista del panel no asciende a nadie en WhatsApp: el
+bot aún necesita ser admin real para realizar acciones de grupo. Los cambios de staff
+se aplican al siguiente mensaje; borrar el número revoca solo el permiso del panel.
 
 ## Confirmaciones
 
