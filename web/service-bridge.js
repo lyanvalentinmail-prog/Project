@@ -8,7 +8,7 @@
  */
 import { groupsRepo, instancesRepo, usersRepo, auditRepo } from '../src/db/index.js';
 import { applyResult } from '../src/core/context.js';
-import { isBotOwner, rankOf, RANK, RANK_LABEL } from '../src/security/permissions.js';
+import { isBotOwner, isInstanceAdmin, rankOf, RANK, RANK_LABEL } from '../src/security/permissions.js';
 import { normalizeJid } from '../src/utils/ids.js';
 import { renderResult } from '../src/design/index.js';
 
@@ -48,8 +48,9 @@ export async function buildWebContext({ manager, groupId, actorJid = null }) {
       name: actorRow?.name ?? 'Panel web',
       user: actorRow,
       isRegistered: Boolean(actorRow),
-      isAdmin: isGroupAdmin || isBotOwner(actorJidNormalized),
+      isAdmin: isGroupAdmin || isBotOwner(actorJidNormalized) || isInstanceAdmin(instance, actorJidNormalized),
       isGroupAdmin,
+      isInstanceAdmin: isInstanceAdmin(instance, actorJidNormalized),
       isBotOwner: isBotOwner(actorJidNormalized) || !actorJidNormalized,
     },
     group: {

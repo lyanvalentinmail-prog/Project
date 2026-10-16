@@ -1064,6 +1064,7 @@ function closeModal() {
   const layer = document.querySelector('#modal-layer');
   if (layer) layer.hidden = true;
   state.connectTarget = null;
+  state.editTarget = null;
   state.modalMode = null;
   state.confirm = null;
   stopLinkWatch();
@@ -1277,9 +1278,63 @@ function openEditInstance(instance) {
   state.editTarget = instance;
   state.modalMode = 'edit';
   const content = $('#modal-content');
-  content.innerHTML = `<button class="icon-button modal-close" type="button" data-action="close-modal" aria-label="Cerrar">${icon('close')}</button><span class="section-kicker">${icon('bot')} Editar bot</span><h2 id="modal-title" style="margin-top:11px">${escapeHtml(instance.name || 'SubBot')}</h2><p class="modal-description">Cambia el nombre o el prefijo de comandos (# - + . /).</p><form class="modal-form" id="edit-instance-form" data-id="${escapeHtml(instance.id)}"><label class="field"><span class="field-label">Nombre</span><input class="text-input" type="text" name="instance-name" value="${escapeHtml(instance.name || '')}" maxlength="40" required /></label><div class="field"><span class="field-label">Prefijo de comandos</span><div class="pairing-methods">${PREFIXES.map((prefix) => `<button class="pairing-option ${(instance.prefix || '.') === prefix ? 'is-selected' : ''}" type="button" data-action="edit-prefix" data-prefix="${prefix}"><span class="pairing-option-icon">${icon('hash')}</span><span><strong>${escapeHtml(prefix)}</strong><small>${escapeHtml(prefix)}menu</small></span></button>`).join('')}</div></div><input type="hidden" name="instance-prefix" value="${escapeHtml(instance.prefix || '.')}" /><button class="btn btn-primary btn-full" type="submit">${icon('check')} Guardar cambios</button></form>`;
+  const adminNumbers = (instance.adminNumbers || []).join('\n');
+  content.innerHTML = `<button class="icon-button modal-close" type="button" data-action="close-modal" aria-label="Cerrar">${icon('close')}</button>
+    <span class="section-kicker">${icon('bot')} Editar bot</span>
+    <h2 id="modal-title" style="margin-top:11px">${escapeHtml(instance.name || 'SubBot')}</h2>
+    <p class="modal-description">Cambia el nombre, el prefijo y quién puede usar los comandos del staff.</p>
+    <form class="modal-form" id="edit-instance-form" data-id="${escapeHtml(instance.id)}">
+      <label class="field"><span class="field-label">Nombre</span><input class="text-input" type="text" name="instance-name" value="${escapeHtml(instance.name || '')}" maxlength="40" required /></label>
+      <div class="field"><span class="field-label">Prefijo de comandos</span><div class="pairing-methods edit-prefixes" role="group" aria-label="Prefijo de comandos">${PREFIXES.map((prefix) => `<button class="pairing-option ${(instance.prefix || '.') === prefix ? 'is-selected' : ''}" type="button" data-action="edit-prefix" data-prefix="${prefix}" aria-label="Usar prefijo ${escapeHtml(prefix)}" aria-pressed="${(instance.prefix || '.') === prefix}"><span><strong>${escapeHtml(prefix)}</strong><small>${escapeHtml(prefix)}menu</small></span></button>`).join('')}</div></div>
+      <input type="hidden" name="instance-prefix" value="${escapeHtml(instance.prefix || '.')}" />
+      <label class="field" for="instance-admin-numbers">
+        <span class="field-label">Números de admins · staff only</span>
+        <textarea class="text-area mono" id="instance-admin-numbers" name="instance-admin-numbers" rows="3" inputmode="tel" autocomplete="off" spellcheck="false" maxlength="3000" placeholder="+598 99 123 456&#10;+52 1 55 1234 5678" aria-describedby="instance-admin-format instance-admin-scope">${escapeHtml(adminNumbers)}</textarea>
+        <span class="field-hint" id="instance-admin-format">Con código de país, uno por línea o separados por comas. Máximo 50 números.</span>
+        <span class="field-hint" id="instance-admin-scope">Acceso staff only en este bot, aunque no sean admins del grupo. No otorga permisos de owner ni los asciende en WhatsApp. Para quitar este acceso, borra el número y guarda.</span>
+      </label>
+      <p class="field-hint">Los admins del grupo conservan sus permisos. Para expulsar o cerrar grupos, el bot debe ser admin en WhatsApp.</p>
+      <p class="modal-error" id="edit-instance-error" role="alert" hidden></p>
+      <button class="btn btn-primary btn-full" type="submit">${icon('check')} Guardar cambios</button>
+    </form>`;
   $('#modal-layer').hidden = false;
   document.body.classList.add('modal-open');
+}
+
+async function submitEditInstance(form) {
+  if (form.dataset.saving === 'true') return;
+  const data = new FormData(form);
+  const id = form.dataset.id;
+  const name = String(data.get('instance-name') || '').trim();
+  const prefix = String(data.get('instance-prefix') || '.');
+  // Enviar también el texto vacío: significa quitar el staff configurado.
+  const adminNumbers = String(data.get('instance-admin-numbers') || '');
+  const button = $('button[type="submit"]', form);
+  const errorNode = $('#edit-instance-error', form);
+  const originalButton = button.innerHTML;
+  form.dataset.saving = 'true';
+  form.setAttribute('aria-busy', 'true');
+  button.disabled = true;
+  button.textContent = 'Guardando…';
+  errorNode.hidden = true;
+  try {
+    const result = await request(`/instances/${encodeURIComponent(id)}`, { method: 'PATCH', body: { name, prefix, adminNumbers } });
+    state.instances = state.instances.map((instance) => instance.id === id ? { ...instance, ...result.instance } : instance);
+    // No cerrar otro diálogo si el usuario cambió de ventana durante el guardado.
+    if ($('#edit-instance-form') === form) closeModal();
+    showToast('Cambios guardados. Los permisos se aplican sin reiniciar el bot.', 'success');
+    loadAdminData({ quiet: true });
+  } catch (error) {
+    const message = error.message || 'No se pudieron guardar los cambios.';
+    errorNode.textContent = message;
+    errorNode.hidden = false;
+    showToast(message, 'error');
+  } finally {
+    delete form.dataset.saving;
+    form.removeAttribute('aria-busy');
+    button.disabled = false;
+    button.innerHTML = originalButton;
+  }
 }
 
 /* ── datos del servidor ──────────────────────────────────────── */
@@ -1547,7 +1602,11 @@ function handleClick(event) {
     const form = $('#edit-instance-form');
     if (form) {
       form.querySelector('[name="instance-prefix"]').value = actionTarget.dataset.prefix;
-      form.querySelectorAll('.pairing-option').forEach((button) => button.classList.toggle('is-selected', button.dataset.prefix === actionTarget.dataset.prefix));
+      form.querySelectorAll('.pairing-option').forEach((button) => {
+        const selected = button.dataset.prefix === actionTarget.dataset.prefix;
+        button.classList.toggle('is-selected', selected);
+        button.setAttribute('aria-pressed', String(selected));
+      });
     }
   }
   else if (action === 'start-instance') runInstanceAction('start', actionTarget.dataset.id);
@@ -1619,17 +1678,7 @@ function handleSubmit(event) {
   if (form.id === 'api-auth-form') { event.preventDefault(); submitApiAuth(form); }
   else if (form.id === 'edit-instance-form') {
     event.preventDefault();
-    const data = new FormData(form);
-    const id = form.dataset.id;
-    const name = String(data.get('instance-name') || '').trim();
-    const prefix = String(data.get('instance-prefix') || '.');
-    request(`/instances/${encodeURIComponent(id)}`, { method: 'PATCH', body: { name, prefix } })
-      .then(() => {
-        closeModal();
-        showToast('Cambios guardados', 'success');
-        loadAdminData({ quiet: true });
-      })
-      .catch((error) => showToast(error.message || 'No se pudieron guardar los cambios.', 'error'));
+    return submitEditInstance(form);
   }
   else if (form.id === 'store-coupon-form') { event.preventDefault(); redeemCoupon(form); }
   else if (form.id === 'ticket-form') { event.preventDefault(); submitTicket(form); }

@@ -7,7 +7,7 @@
 export { getDb, initDatabase, closeDatabase, tx, meta, currentJournalMode } from './connection.js';
 export { driverInfo } from './driver.js';
 
-export { instancesRepo, ALLOWED_PREFIXES, normalizePrefix } from './repositories/instances.repo.js';
+export { instancesRepo, ALLOWED_PREFIXES, normalizePrefix, MAX_INSTANCE_ADMINS, normalizeAdminNumbers } from './repositories/instances.repo.js';
 export { groupsRepo } from './repositories/groups.repo.js';
 export { rolesRepo, roleKey } from './repositories/roles.repo.js';
 export { usersRepo } from './repositories/users.repo.js';

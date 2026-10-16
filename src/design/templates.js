@@ -869,7 +869,7 @@ export function farewell({ name, groupName, role, total, reason = 'leave' }) {
    ═══════════════════════════════════════════════════════════════ */
 
 export function noPermission({ required, command }) {
-  const who = { admin: 'administradores del grupo', owner: 'el owner del bot', registered: 'integrantes registrados' }[required] ?? required;
+  const who = { admin: 'administradores del grupo o del bot', owner: 'el owner del bot', registered: 'integrantes registrados' }[required] ?? required;
   return [
     `${SYM.bracketL} ⛓️ ${SYM.bracketR} ㅤ𝐴𝑐𝑐𝑒𝑠𝑜 ㅤ𝑟𝑒𝑠𝑡𝑟𝑖𝑛𝑔𝑖𝑑𝑜`,
     RULE.chain,

@@ -4,6 +4,7 @@
  * Todo responde JSON `{ ok, ... }`. El panel está abierto: no se pide
  * contraseña para usar la API (decisión de producto).
  */
+import { createHash } from 'node:crypto';
 import os from 'node:os';
 import fs from 'node:fs';
 import express from 'express';
@@ -19,6 +20,8 @@ import {
   ticketsRepo,
   statsRepo,
   normalizePrefix,
+  normalizeAdminNumbers,
+  tx,
   driverInfo,
   currentJournalMode,
 } from '../src/db/index.js';
@@ -66,6 +69,7 @@ export const publicInstance = (row) => ({
   phoneMasked: maskPhone(row.phone),
   pairingMode: row.pairing_mode ?? (row.pairingMode ? 'pairing' : 'qr'),
   prefix: row.prefix ?? '.',
+  adminNumbers: row.admin_numbers ?? [],
   activated: Boolean(row.activated),
   activatedAt: row.activated_at ?? null,
   status: row.status,
@@ -105,7 +109,12 @@ export function buildStateSnapshot(manager) {
     },
     at: Date.now(),
   };
-  payload.revision = `${instances.map((i) => `${i.id}:${i.status}:${i.activated ? 1 : 0}:${i.pairingCode ? 'c' : '-'}${i.uptimeMs ? 'u' : '-'}`).join(',')}|${stats.connected}|${stats.pending}|${payload.stats.pendingPairing}`;
+  // También cambia al editar el bot, no solo al cambiar la conexión:
+  // así el editor vuelve a abrir con los números recién guardados.
+  const settingsRevision = createHash('sha256')
+    .update(JSON.stringify(instances.map((i) => [i.id, i.name, i.prefix, i.adminNumbers, i.autostart])))
+    .digest('hex');
+  payload.revision = `${instances.map((i) => `${i.id}:${i.status}:${i.activated ? 1 : 0}:${i.pairingCode ? 'c' : '-'}${i.uptimeMs ? 'u' : '-'}`).join(',')}|${stats.connected}|${stats.pending}|${payload.stats.pendingPairing}|${settingsRevision}`;
   return payload;
 }
 
@@ -295,15 +304,31 @@ export function createRouter({ manager, auth }) {
   router.patch('/instances/:id', (req, res) => {
     const instance = instancesRepo.byId(req.params.id);
     if (!instance) return res.status(404).json({ ok: false, error: 'Sub-bot no encontrado.' });
-    const { name, autostart, prefix } = req.body ?? {};
-    if (typeof name === 'string' && name.trim()) instancesRepo.rename(req.params.id, name.trim());
-    if (typeof autostart === 'boolean') instancesRepo.setAutostart(req.params.id, autostart);
-    if (prefix !== undefined) {
-      const check = normalizePrefix(prefix, instance.prefix);
-      if (!check.ok) return res.status(400).json({ ok: false, error: check.reason });
-      instancesRepo.setPrefix(req.params.id, check.value);
-    }
-    return res.json({ ok: true, instance: publicInstance(instancesRepo.byId(req.params.id)) });
+    const { name, autostart, prefix, adminNumbers } = req.body ?? {};
+    // Validar todo antes de escribir: un número inválido no debe dejar
+    // guardados parcialmente el nombre, el prefijo u otros permisos.
+    const prefixCheck = prefix !== undefined ? normalizePrefix(prefix, instance.prefix) : null;
+    if (prefixCheck && !prefixCheck.ok) return res.status(400).json({ ok: false, error: prefixCheck.reason });
+    const adminsCheck = adminNumbers !== undefined ? normalizeAdminNumbers(adminNumbers) : null;
+    if (adminsCheck && !adminsCheck.ok) return res.status(400).json({ ok: false, error: adminsCheck.reason });
+
+    tx(() => {
+      if (typeof name === 'string' && name.trim()) instancesRepo.rename(instance.id, name.trim());
+      if (typeof autostart === 'boolean') instancesRepo.setAutostart(instance.id, autostart);
+      if (prefixCheck) instancesRepo.setPrefix(instance.id, prefixCheck.value);
+      if (adminsCheck) {
+        instancesRepo.setAdminNumbers(instance.id, adminsCheck.value);
+        auditRepo.log({
+          instanceId: instance.id,
+          action: 'instance.admins.updated',
+          detail: { source: 'web', previousCount: instance.admin_numbers.length, count: adminsCheck.value.length },
+        });
+      }
+    });
+    const updated = instancesRepo.byId(instance.id);
+    const client = manager.client(instance.id);
+    if (client) client.name = updated.name;
+    return res.json({ ok: true, instance: publicInstance(updated) });
   });
 
   /** Endpoint antiguo: habilita sin clave, no sustituye la vinculación de WhatsApp. */

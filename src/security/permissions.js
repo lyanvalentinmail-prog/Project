@@ -3,7 +3,7 @@
  * ────────────────────────────────────────────────────────────────
  * Jerarquía única y explícita:
  *
- *   owner del bot  >  admin del grupo  >  registrado  >  miembro
+ *   owner del bot  >  admin del grupo / staff del sub-bot  >  registrado  >  miembro
  *
  * Todos los comandos declaran el permiso mínimo que necesitan y el
  * router lo comprueba ANTES de ejecutar nada (seguridad #1).
@@ -26,17 +26,23 @@ export function isBotOwner(jid) {
   return env.ownerNumbers.some((phone) => sameUser(target, `${phone}@s.whatsapp.net`));
 }
 
+/** Staff añadido desde el panel: solo en esta instancia, nunca rango owner. */
+export function isInstanceAdmin(instance, jid) {
+  if (!jid || !Array.isArray(instance?.admin_numbers)) return false;
+  return instance.admin_numbers.some((phone) => sameUser(jid, `${phone}@s.whatsapp.net`));
+}
+
 /** Rango efectivo de un autor dentro de un grupo. */
 export function rankOf(ctx) {
   if (isBotOwner(ctx.author?.jid)) return RANK.owner;
-  if (ctx.author?.isAdmin) return RANK.admin;
+  if (ctx.author?.isAdmin || isInstanceAdmin(ctx.instance, ctx.author?.jid)) return RANK.admin;
   if (ctx.author?.isRegistered) return RANK.registered;
   return RANK.member;
 }
 
 export const RANK_LABEL = Object.freeze({
   [RANK.owner]: 'owner del bot',
-  [RANK.admin]: 'admin del grupo',
+  [RANK.admin]: 'admin del grupo o del bot',
   [RANK.registered]: 'integrante registrado',
   [RANK.member]: 'miembro',
 });
@@ -83,8 +89,10 @@ export function canModerate(ctx, target) {
   if (isBotOwner(actorJid)) return { ok: true };
   if (sameUser(actorJid, targetJid)) return { ok: false, reason: 'No puedes moderarte a ti mismo.' };
   if (isBotOwner(targetJid)) return { ok: false, reason: 'El owner del bot está fuera de tu alcance.' };
-  if (target?.isAdmin) return { ok: false, reason: 'No puedes moderar a otro administrador.' };
-  if (!ctx.author?.isAdmin) return { ok: false, reason: 'Solo los administradores pueden moderar.' };
+  if (target?.isAdmin || isInstanceAdmin(ctx.instance, targetJid)) {
+    return { ok: false, reason: 'No puedes moderar a otro administrador.' };
+  }
+  if (rankOf(ctx) < RANK.admin) return { ok: false, reason: 'Solo los administradores pueden moderar.' };
   return { ok: true };
 }
 

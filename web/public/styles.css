@@ -908,6 +908,11 @@ svg { flex: 0 0 auto; }
 .modal-card h2 { margin: 0 0 6px; font-size: 25px; font-weight: 850; letter-spacing: -.7px; }
 .modal-description { margin: 0 0 20px; color: var(--text-secondary); font-size: 12px; line-height: 1.7; }
 .modal-form { display: grid; gap: 14px; }
+/* El editor deja espacio para el staff sin cinco tarjetas de prefijo apiladas. */
+.edit-prefixes { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.edit-prefixes .pairing-option { min-height: 64px; justify-content: center; padding: 10px 0; border-radius: 12px; text-align: center; }
+.edit-prefixes .pairing-option strong { font-family: var(--mono); font-size: 20px; }
+.edit-prefixes .pairing-option small { margin-top: 2px; font-size: 10px; }
 .modal-error { min-height: 18px; margin: 2px 0 0; color: #ff8f96; font-size: 11px; text-align: center; }
 .modal-switch { margin: 17px 0 0; color: var(--text-muted); font-size: 12px; text-align: center; }
 .modal-switch button { padding: 0; border: 0; color: var(--purple-bright); background: none; cursor: pointer; font-weight: 700; }

@@ -6,7 +6,7 @@
  * (enviar mensajes, expulsar, cambiar ajustes del grupo).
  */
 import { usersRepo, groupsRepo, requestsRepo, auditRepo, instancesRepo } from '../db/index.js';
-import { isBotOwner, rankOf, RANK, RANK_LABEL } from '../security/permissions.js';
+import { isBotOwner, isInstanceAdmin, rankOf, RANK, RANK_LABEL } from '../security/permissions.js';
 import { normalizeJid, isGroupJid, maskPhone } from '../utils/ids.js';
 import { chunkText } from '../utils/text.js';
 import { ensureGroup, invalidateGroupCache } from './group-sync.js';
@@ -125,8 +125,8 @@ export async function createContext({ raw, instance, client }) {
   const fromMe = Boolean(raw.key?.fromMe);
   const messageId = raw.key?.id ?? null;
 
-  // fila fresca de la instancia: el panel puede activarla/cambiar su
-  // prefijo mientras el bot está conectado y el contexto lo refleja
+  // Fila fresca: los cambios de prefijo y staff desde el panel se
+  // aplican al siguiente mensaje, sin reiniciar ni volver a vincular.
   const instanceRow = (instance?.id ? instancesRepo.byId(instance.id) : null) ?? instance;
 
   const text = extractText(m);
@@ -156,6 +156,7 @@ export async function createContext({ raw, instance, client }) {
   const userRow = groupCtx ? usersRepo.get(groupCtx.groupId, authorJid) : null;
   const isAdmin = groupCtx ? groupsRepo.isAdmin(groupCtx.groupId, authorJid) : false;
   const authorIsBotOwner = isBotOwner(authorJid);
+  const authorIsInstanceAdmin = isInstanceAdmin(instanceRow, authorJid);
   const pushName = raw.pushName ?? raw.notify ?? userRow?.push_name ?? null;
   const displayName = userRow?.name ?? pushName ?? maskPhone(authorJid);
 
@@ -178,9 +179,10 @@ export async function createContext({ raw, instance, client }) {
       name: displayName,
       user: userRow,
       isRegistered: Boolean(userRow) && userRow.status === 'active',
-      isAdmin: isAdmin || authorIsBotOwner,
+      isAdmin: isAdmin || authorIsBotOwner || authorIsInstanceAdmin,
       isGroupAdmin: isAdmin,
       isBotOwner: authorIsBotOwner,
+      isInstanceAdmin: authorIsInstanceAdmin,
     },
     // grupo
     group: groupCtx,

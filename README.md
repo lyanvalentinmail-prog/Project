@@ -135,6 +135,25 @@ para cargar los cambios (no hace falta borrar la sesión ni volver a vincular).
 Los bots antiguos también quedan habilitados al actualizar. Se conserva su configuración
 de inicio automático; los bots detenidos no se arrancan por la migración.
 
+### Administradores del bot (staff only)
+
+En **Mis Bots → Editar → Números de admins · staff only**, agrega los números de
+WhatsApp con código de país, **uno por línea o separados por comas** (ej.
+`+598 99 123 456`). Se aceptan hasta 50 números por bot y los duplicados se eliminan.
+Pulsa **Guardar cambios**: el permiso se aplica desde el siguiente mensaje, sin
+reiniciar ni volver a vincular. Para revocarlo, borra el número y vuelve a guardar.
+
+- Pueden usar los comandos de administración de **ese sub-bot** (aprobar personajes,
+  advertir, anuncios, etc.), aunque no sean administradores del grupo.
+- No reciben rango de owner, permisos sobre otros sub-bots ni un ascenso en WhatsApp.
+- La lista queda en SQLite y sobrevive a reinicios y sincronizaciones de participantes.
+- Los admins reales del grupo y los owners de `OWNER_NUMBERS` conservan sus permisos.
+  El número del **bot** debe seguir siendo admin en WhatsApp para expulsar, añadir
+  participantes o cerrar/abrir grupos; esta lista no permite escribir en un grupo
+  cerrado si WhatsApp no lo autoriza.
+
+El panel sigue abierto por diseño: limita su acceso a personas de confianza.
+
 ### 𓆩 ✨ 𓆪 Panel web sin parpadeos
 
 El panel se conecta al servidor por SSE y **solo repinta lo que cambió**: si nada se
