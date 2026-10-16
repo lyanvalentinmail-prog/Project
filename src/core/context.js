@@ -10,6 +10,7 @@ import { isBotOwner, rankOf, RANK, RANK_LABEL } from '../security/permissions.js
 import { normalizeJid, isGroupJid, maskPhone } from '../utils/ids.js';
 import { chunkText } from '../utils/text.js';
 import { ensureGroup, invalidateGroupCache } from './group-sync.js';
+import { isLidJid, isPnJid, adminsFromMetadata } from '../utils/lid.js';
 import { renderResult, setRenderPrefix } from '../design/index.js';
 
 /* ═══════════════════════════════════════════════════════════════
@@ -83,6 +84,30 @@ export function extractQuoted(m) {
 
 export const isIgnorableType = (m) => Boolean(m) && IGNORED_TYPES.some((type) => m[type]);
 
+/**
+ * Autor del mensaje tal como llega: si WhatsApp manda el número aparte
+ * (participantAlt / remoteJidAlt en grupos o chats con LID), se prefiere.
+ */
+export function rawAuthorJid(raw, { fromMe, isGroup, client }) {
+  if (fromMe) return client?.jid ?? null;
+  const key = raw?.key ?? {};
+  const primary = isGroup ? key.participant ?? raw?.participant : key.remoteJid;
+  const alt = isGroup ? key.participantAlt : key.remoteJidAlt;
+  return isPnJid(normalizeJid(alt)) ? alt : primary;
+}
+
+/** Número de la persona si se conoce; si WhatsApp solo dio el LID, el LID. */
+export async function canonicalJid(client, jid) {
+  const normalized = normalizeJid(jid);
+  if (!normalized || !isLidJid(normalized)) return normalized;
+  try {
+    if (typeof client?.resolveUser === 'function') return (await client.resolveUser(normalized)) ?? normalized;
+  } catch {
+    /* sin equivalencia: queda el LID */
+  }
+  return typeof client?.toPn === 'function' ? client.toPn(normalized) ?? normalized : normalized;
+}
+
 /* ═══════════════════════════════════════════════════════════════
    Construcción del contexto
    ═══════════════════════════════════════════════════════════════ */
@@ -98,9 +123,6 @@ export async function createContext({ raw, instance, client }) {
   const chatJid = normalizeJid(raw.key?.remoteJid);
   const isGroup = isGroupJid(chatJid);
   const fromMe = Boolean(raw.key?.fromMe);
-  const authorJid = normalizeJid(fromMe
-    ? client.jid
-    : isGroup ? raw.key?.participant ?? raw.participant : chatJid);
   const messageId = raw.key?.id ?? null;
 
   // fila fresca de la instancia: el panel puede activarla/cambiar su
@@ -108,8 +130,6 @@ export async function createContext({ raw, instance, client }) {
   const instanceRow = (instance?.id ? instancesRepo.byId(instance.id) : null) ?? instance;
 
   const text = extractText(m);
-  const mentions = extractMentions(m);
-  const quoted = extractQuoted(m);
 
   let groupCtx = null;
   if (isGroup) {
@@ -125,6 +145,13 @@ export async function createContext({ raw, instance, client }) {
       row,
     };
   }
+
+  // Con la lista de participantes ya cargada, los LID se traducen a números:
+  // así el owner, las fichas y los admins coinciden aunque el grupo use LID.
+  const authorJid = await canonicalJid(client, rawAuthorJid(raw, { fromMe, isGroup, client }));
+  const mentions = [...new Set((await Promise.all(extractMentions(m).map((jid) => canonicalJid(client, jid)))).filter(Boolean))];
+  const quoted = extractQuoted(m);
+  if (quoted?.participant) quoted.participant = await canonicalJid(client, quoted.participant);
 
   const userRow = groupCtx ? usersRepo.get(groupCtx.groupId, authorJid) : null;
   const isAdmin = groupCtx ? groupsRepo.isAdmin(groupCtx.groupId, authorJid) : false;
@@ -286,7 +313,7 @@ export async function applyAction(ctx, effect) {
       case 'refreshAdmins': {
         if (ctx.group) {
           const metadata = await ctx.client.groupMetadata(ctx.group.groupId).catch(() => null);
-          if (metadata) groupsRepo.syncAdmins(ctx.group.groupId, (metadata.participants ?? []).filter((p) => p.admin));
+          if (metadata) groupsRepo.syncAdmins(ctx.group.groupId, adminsFromMetadata(metadata, ctx.client));
           invalidateGroupCache(ctx.group.groupId);
         }
         return { ok: true };

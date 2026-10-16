@@ -11,9 +11,11 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import process from 'node:process';
+import { spawnSync } from 'node:child_process';
 import { env, ROOT } from '../src/config/env.js';
 import { IDENTITY } from '../src/config/identity.js';
 import { banner } from '../src/core/logger.js';
+import { isTermux, isSharedStorage, platformLabel, nodeHasBuiltinSqlite } from '../src/utils/platform.js';
 
 const results = [];
 const check = (name, ok, detail = '', critical = false) => {
@@ -51,20 +53,54 @@ async function main() {
   banner.title('\n𓆩 ☕ 𓆪  VÉRSOVA · diagnóstico del entorno\n');
 
   /* ── runtime ─────────────────────────────────────────────── */
+  const termux = isTermux();
   const [major] = process.versions.node.split('.').map(Number);
+  check('plataforma', true, `${platformLabel()} · ${process.platform}/${process.arch}`);
   check('Node.js ≥ 22', major >= 22, `versión instalada: ${process.versions.node}`, true);
 
   /* ── dependencias ────────────────────────────────────────── */
-  for (const dep of [
-    '@whiskeysockets/baileys',
-    'better-sqlite3',
-    'express',
-    'qrcode',
-    'dotenv',
-    'pino',
-  ]) {
+  for (const dep of ['@whiskeysockets/baileys', 'express', 'qrcode', 'dotenv', 'pino']) {
     const mod = await tryImport(dep);
     check(`dependencia ${dep}`, !mod?.__error, mod?.__error ?? 'importable', true);
+  }
+
+  /* ── motor SQLite: better-sqlite3 (opcional) o node:sqlite ── */
+  const { driverInfo } = await import('../src/db/driver.js');
+  const driver = driverInfo();
+  if (driver.ok) {
+    const engine = driver.name === 'node:sqlite' ? 'node:sqlite (integrado en Node)' : `${driver.name} ${driver.version ?? ''}`.trim();
+    let why = '';
+    if (driver.name === 'node:sqlite' && driver.fallbackReason) {
+      why = /Cannot find module|MODULE_NOT_FOUND/.test(driver.fallbackReason)
+        ? ' · better-sqlite3 no está instalado (normal en Termux; no hace falta)'
+        : ` · ${driver.fallbackReason}`;
+    }
+    check('motor SQLite', true, `${engine} · SQLite ${driver.sqliteVersion ?? '?'}${why}`, true);
+  } else {
+    const hint = nodeHasBuiltinSqlite()
+      ? 'reinstala las dependencias (npm install)'
+      : `actualiza Node a 22.13 o superior (tienes ${process.versions.node}) o instala better-sqlite3`;
+    check('motor SQLite', false, `${driver.error ?? 'no hay motor disponible'} — ${hint}`, true);
+  }
+
+  /* ── Termux (Android) ────────────────────────────────────── */
+  if (termux) {
+    check(
+      'Termux · ubicación del proyecto',
+      !isSharedStorage(ROOT),
+      isSharedStorage(ROOT)
+        ? `${ROOT} está en el almacenamiento compartido: muévelo al HOME de Termux (cd ~ && git clone …)`
+        : `${ROOT} · fuera del almacenamiento compartido`,
+      true
+    );
+    const wakeLock = spawnSync('sh', ['-c', 'command -v termux-wake-lock'], { encoding: 'utf8' }).status === 0;
+    check('Termux · termux-wake-lock', wakeLock, wakeLock ? 'disponible (npm run termux lo activa)' : 'no encontrado: ejecuta pkg upgrade (viene en termux-tools)');
+    check(
+      'Termux · puerto del panel',
+      env.webPort >= 1024,
+      env.webPort >= 1024 ? `${env.webPort}` : `${env.webPort} necesita root en Android: usa PORT=3000`,
+      true
+    );
   }
 
   const baileys = await tryImport('@whiskeysockets/baileys');
@@ -96,7 +132,9 @@ async function main() {
   try {
     const { initDatabase, meta, closeDatabase, instancesRepo, groupsRepo, usersRepo } = await import('../src/db/index.js');
     initDatabase();
-    check('base de datos SQLite', true, `${path.relative(ROOT, env.dbPath) || env.dbPath} · esquema v${meta.get('schema_version', '?')}`, true);
+    const { currentJournalMode } = await import('../src/db/index.js');
+    const journal = String(currentJournalMode() ?? '?').toUpperCase();
+    check('base de datos SQLite', true, `${path.relative(ROOT, env.dbPath) || env.dbPath} · esquema v${meta.get('schema_version', '?')} · diario ${journal}`, true);
 
     const instances = instancesRepo.all();
     const groups = groupsRepo.all();

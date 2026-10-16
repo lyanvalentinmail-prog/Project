@@ -105,6 +105,10 @@ export async function createWebServer({ manager, port = env.webPort, host = env.
 
   /* ── API ────────────────────────────────────────────────────── */
   app.use('/api', createRouter({ manager, auth }));
+  // rutas de la API que no existen: JSON (no la página HTML de Express)
+  app.use('/api', (req, res) => {
+    res.status(404).json({ ok: false, error: `Ruta no encontrada: ${req.method} /api${req.path}` });
+  });
 
   /* ── estáticos ──────────────────────────────────────────────── */
   app.use(express.static(PUBLIC_DIR, { extensions: ['html'], index: 'index.html' }));
@@ -120,8 +124,11 @@ export async function createWebServer({ manager, port = env.webPort, host = env.
 
   /* ── manejo de errores: nunca tiran el proceso ──────────────── */
   app.use((error, _req, res, _next) => {
-    log.error({ err: error }, 'error en el panel web');
     if (res.headersSent) return;
+    // errores del cliente (JSON mal formado, cuerpo demasiado grande): no son fallos del servidor
+    if (error?.type === 'entity.parse.failed') return res.status(400).json({ ok: false, error: 'El cuerpo de la petición no es JSON válido.' });
+    if (error?.type === 'entity.too.large') return res.status(413).json({ ok: false, error: 'La petición es demasiado grande.' });
+    log.error({ err: error }, 'error en el panel web');
     res.status(500).json({ ok: false, error: `Error interno: ${error?.message ?? 'desconocido'}` });
   });
 
@@ -139,6 +146,7 @@ export async function createWebServer({ manager, port = env.webPort, host = env.
   return {
     app,
     server,
+    host,
     port: actualPort,
     url,
     broadcast,
@@ -172,6 +180,15 @@ function listen(app, startPort, host) {
           attempt += 1;
           log.warn(`puerto ${port} ocupado, probando ${port + 1}`);
           return tryPort(port + 1);
+        }
+        if (error.code === 'EACCES' || error.code === 'EPERM') {
+          // Android/Termux (y Linux sin root) no permiten puertos < 1024
+          const variable = process.env.PORT ? 'PORT' : 'WEB_PORT';
+          error.message = `sin permiso para usar el puerto ${port}${port < 1024 ? ` (los puertos menores que 1024 necesitan root; usa ${variable}=3000)` : ''}`;
+        } else if (error.code === 'EADDRNOTAVAIL') {
+          error.message = `la dirección WEB_HOST=${host} no existe en este equipo (usa WEB_HOST=0.0.0.0)`;
+        } else if (error.code === 'EADDRINUSE') {
+          error.message = `los puertos ${startPort}–${port} están ocupados (¿VÉRSOVA ya está en marcha?)`;
         }
         return reject(error);
       });

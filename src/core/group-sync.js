@@ -7,6 +7,7 @@
  */
 import { groupsRepo, auditRepo } from '../db/index.js';
 import { normalizeJid, isGroupJid } from '../utils/ids.js';
+import { adminsFromMetadata, botIsAdminIn } from '../utils/lid.js';
 
 const SYNC_TTL_MS = 5 * 60_000;
 const metadataCache = new Map(); // groupJid → { at, botIsAdmin, size, subject }
@@ -24,6 +25,7 @@ export async function ensureGroup({ client, instanceId, groupJid, force = false 
   if (!isGroupJid(jid)) throw new Error(`No es un grupo: ${groupJid}`);
 
   const botJid = normalizeJid(client.jid);
+  const isBot = (candidate) => (typeof client.isMe === 'function' ? client.isMe(candidate) : normalizeJid(candidate) === botJid);
   const cached = metadataCache.get(jid);
   const cacheValid = cached && !force && Date.now() - cached.at < SYNC_TTL_MS;
 
@@ -44,14 +46,15 @@ export async function ensureGroup({ client, instanceId, groupJid, force = false 
         waCreatedAt: metadata.creation ? Number(metadata.creation) * 1000 : row?.wa_created_at ?? null,
         size: participants.length,
       });
-      groupsRepo.syncAdmins(jid, participants.filter((p) => p.admin));
+      // admins por su número cuando se conoce (en grupos con LID llegan como @lid)
+      groupsRepo.syncAdmins(jid, adminsFromMetadata(metadata, client));
       groupsRepo.markSynced(jid);
 
       metadataCache.set(jid, {
         at: Date.now(),
         size: participants.length,
         subject: metadata.subject,
-        botIsAdmin: participants.some((p) => normalizeJid(p.id ?? p.jid) === botJid && Boolean(p.admin)),
+        botIsAdmin: botIsAdminIn(metadata, client),
       });
       if (!cached) {
         auditRepo.log({
@@ -66,7 +69,7 @@ export async function ensureGroup({ client, instanceId, groupJid, force = false 
 
   const fromCache = metadataCache.get(jid);
   const botIsAdmin = row
-    ? groupsRepo.listAdmins(jid).some((a) => a.user_jid === botJid) || Boolean(fromCache?.botIsAdmin)
+    ? groupsRepo.listAdmins(jid).some((a) => isBot(a.user_jid)) || Boolean(fromCache?.botIsAdmin)
     : false;
 
   return {

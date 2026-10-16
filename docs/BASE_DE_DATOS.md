@@ -1,7 +1,24 @@
 # 𓆩 ☕ 𓆪 VÉRSOVA — Diseño de la base de datos
 
-Motor: **SQLite** (`better-sqlite3`) en modo **WAL**.
-Archivo: `data/versova.db` (fuera de git). Esquema v3.
+Motor: **SQLite** en modo **WAL**, con uno de estos dos controladores (misma API, ver `src/db/driver.js`):
+
+| Controlador | Cuándo se usa |
+|---|---|
+| `better-sqlite3` | Si está instalado (dependencia **opcional**; PC, VPS, Render) |
+| `node:sqlite` | SQLite integrado en Node ≥ 22.13: Termux/Android o si `better-sqlite3` no compiló |
+
+`DB_DRIVER=auto` (por defecto) elige solo; `DB_DRIVER=node` o `DB_DRIVER=better-sqlite3` lo fuerzan.
+`DB_JOURNAL_MODE` (por defecto `WAL`) cambia el diario; si el sistema de archivos no admite WAL,
+la conexión pasa sola a `DELETE`. El panel (Métricas) y `npm run doctor` muestran el motor real.
+
+Archivo: `data/versova.db` (fuera de git). Esquema v3. Mientras el bot corre existe
+`data/versova.pid`: impide abrir una segunda copia con los mismos datos.
+
+**Identidades LID.** WhatsApp identifica a muchos participantes con un jid `…@lid` en lugar
+del número. El bot aprende la correspondencia LID → número (metadatos de grupo, contactos,
+`lid-mapping.update` y la propia sesión) y guarda fichas, personajes, admins y warns **por
+número** siempre que lo conoce; si no, conserva el `@lid` tal cual (nunca inventa un número).
+Las filas antiguas guardadas con `@lid` no se migran: siguen funcionando con ese jid.
 
 Reglas generales:
 

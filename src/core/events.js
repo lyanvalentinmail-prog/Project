@@ -9,6 +9,7 @@
 import { groupsRepo, usersRepo, auditRepo } from '../db/index.js';
 import { ensureGroup, invalidateGroupCache, clearGroupCache } from './group-sync.js';
 import { normalizeJid, sameUser } from '../utils/ids.js';
+import { participantJid, adminsFromMetadata } from '../utils/lid.js';
 import { renderResult } from '../design/index.js';
 import { chunkText } from '../utils/text.js';
 import * as teamService from '../services/team.service.js';
@@ -47,15 +48,32 @@ async function eventContext({ client, instance, groupJid, actorJid = null }) {
   };
 }
 
+/**
+ * Destino real de un aviso: los servicios usan destinos simbólicos
+ * ('group', 'author'…). Antes se normalizaba 'group' como si fuera un
+ * número y el aviso salía hacia «@s.whatsapp.net» (nunca llegaba).
+ */
+export function eventTarget(ctx, to) {
+  if (!to || to === 'group' || to === 'reply') return ctx.group?.groupId ?? ctx.chatJid ?? null;
+  if (to === 'author' || to === 'private') return ctx.author?.jid ?? null;
+  const jid = normalizeJid(to);
+  return jid && jid.includes('@') && !jid.startsWith('@') ? jid : null;
+}
+
 async function send(ctx, to, payload, options = {}) {
   const text = typeof payload === 'string' ? payload : renderResult(payload);
   if (!text) return null;
+  const target = eventTarget(ctx, to);
+  if (!target) {
+    log.warn({ to }, 'aviso de evento sin destino válido');
+    return null;
+  }
   const mentions = [...new Set((options.mentions ?? []).map(normalizeJid).filter(Boolean))];
   let sent = null;
   for (const part of chunkText(text)) {
     const content = { text: part };
     if (mentions.length) content.mentions = mentions;
-    sent = await ctx.client.sendMessage(normalizeJid(to), content, {}).catch((error) => {
+    sent = await ctx.client.sendMessage(target, content, {}).catch((error) => {
       log.warn({ err: error, to }, 'no se pudo enviar el mensaje del evento');
       return null;
     });
@@ -94,22 +112,32 @@ export async function onMessage(ctx) {
  */
 export async function onParticipantsUpdate({ client, instance, event }) {
   const groupJid = normalizeJid(event.id);
-  const participants = (event.participants ?? []).map(normalizeJid).filter(Boolean);
+  // Baileys 7 entrega objetos { id, phoneNumber?, lid?, admin } (antes, textos):
+  // se trabaja con el número cuando se conoce y con el LID si no.
+  const entries = (event.participants ?? []).filter(Boolean);
+  client.learnParticipants?.(entries);
+  const participants = [...new Set(entries.map((entry) => participantJid(entry, client)).filter(Boolean))];
   if (!participants.length) return;
+  const actorJid = event.authorPn
+    ? normalizeJid(event.authorPn)
+    : event.author ? participantJid(event.author, client) : null;
 
   let ctx;
   try {
-    ctx = await eventContext({ client, instance, groupJid, actorJid: event.author ?? null });
+    ctx = await eventContext({ client, instance, groupJid, actorJid });
   } catch (error) {
     log.warn({ err: error, groupJid }, 'no se pudo preparar el contexto del evento de grupo');
     return;
   }
 
   const botJid = normalizeJid(client.jid);
+  const isBot = (jid) => (typeof client.isMe === 'function' ? client.isMe(jid) : sameUser(jid, botJid));
+  const botEntry = (jid) => entries.some((entry) => typeof entry === 'object' && participantJid(entry, client) === jid &&
+    (isBot(entry.id) || isBot(entry.phoneNumber) || isBot(entry.lid)));
 
   for (const jid of participants) {
-    // nunca actuar sobre nosotros mismos
-    if (sameUser(jid, botJid)) continue;
+    // nunca actuar sobre nosotros mismos (por número o por LID)
+    if (isBot(jid) || botEntry(jid)) continue;
 
     switch (event.action) {
       case 'add': {
@@ -162,7 +190,8 @@ export async function onParticipantsUpdate({ client, instance, event }) {
       }
 
       case 'remove': {
-        const left = registration.syncMemberLeft(ctx, jid, event.author && !sameUser(event.author, jid) ? 'kick' : 'leave');
+        const samePerson = sameUser(actorJid, jid) || Boolean(client.lids?.same?.(actorJid, jid));
+        const left = registration.syncMemberLeft(ctx, jid, actorJid && !samePerson ? 'kick' : 'leave');
         if (!ctx.group.config.farewell) break;
         const remaining = usersRepo.counts(groupJid).active;
         await send(ctx, 'group', {
@@ -182,14 +211,14 @@ export async function onParticipantsUpdate({ client, instance, event }) {
       case 'demote': {
         const metadata = await client.groupMetadata(groupJid).catch(() => null);
         if (metadata) {
-          groupsRepo.syncAdmins(groupJid, (metadata.participants ?? []).filter((p) => p.admin));
+          groupsRepo.syncAdmins(groupJid, adminsFromMetadata(metadata, client));
           groupsRepo.markSynced(groupJid);
         }
         invalidateGroupCache(groupJid);
         auditRepo.log({
           instanceId: instance.id,
           groupId: groupJid,
-          actorJid: event.author ?? null,
+          actorJid: actorJid ?? null,
           action: 'group.sync',
           targetJid: jid,
           detail: { change: event.action },
@@ -236,7 +265,7 @@ export async function resyncAllGroups({ client, instance }) {
         waCreatedAt: metadata.creation ? Number(metadata.creation) * 1000 : null,
         size: participants.length,
       });
-      groupsRepo.syncAdmins(groupJid, participants.filter((p) => p.admin));
+      groupsRepo.syncAdmins(groupJid, adminsFromMetadata(metadata, client));
       groupsRepo.markSynced(groupJid);
       synced += 1;
     }

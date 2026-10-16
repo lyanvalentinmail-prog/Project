@@ -19,7 +19,10 @@ import {
   ticketsRepo,
   statsRepo,
   normalizePrefix,
+  driverInfo,
+  currentJournalMode,
 } from '../src/db/index.js';
+import { platformLabel } from '../src/utils/platform.js';
 import { IDENTITY } from '../src/config/identity.js';
 import { env } from '../src/config/env.js';
 import { registry } from '../src/commands/index.js';
@@ -50,7 +53,9 @@ function sampleCpu() {
     used += times.user + times.nice + times.sys + times.irq;
     total += times.user + times.nice + times.sys + times.irq + times.idle;
   }
-  return { used, total, at: Date.now(), cores: cpus.length, model: cpus[0]?.model?.trim() ?? 'desconocido' };
+  // en Android os.cpus() puede venir vacío (/proc/stat restringido): los núcleos salen de availableParallelism
+  const cores = cpus.length || (typeof os.availableParallelism === 'function' ? os.availableParallelism() : 0);
+  return { used, total, at: Date.now(), cores, model: cpus[0]?.model?.trim() || 'desconocido' };
 }
 
 /** Sub-bot en formato público (sin datos sensibles). */
@@ -224,6 +229,7 @@ export function createRouter({ manager, auth }) {
       server: {
         hostname: os.hostname(),
         platform: `${os.type()} ${os.release()}`,
+        environment: platformLabel(),
         arch: os.arch(),
         node: process.version,
         uptimeMs: Math.round(process.uptime() * 1000),
@@ -243,6 +249,11 @@ export function createRouter({ manager, auth }) {
       database: {
         path: env.dbPath,
         sizeBytes: dbSize,
+        engine: (() => {
+          const info = driverInfo();
+          return info.ok ? { name: info.name, version: info.version ?? null, sqlite: info.sqliteVersion ?? null } : null;
+        })(),
+        journalMode: currentJournalMode(),
         tables: dbCounts(),
         commandsExecuted: statsRepo.totalCommands(),
         topCommands: statsRepo.topCommands(8),

@@ -9,6 +9,7 @@ import { CONFIG_KEYS } from '../config/defaults.js';
 import { IDENTITY } from '../config/identity.js';
 import { sanitizeText } from '../utils/text.js';
 import { normalizeJid, isUserJid, isGroupJid } from '../utils/ids.js';
+import { isLidJid } from '../utils/lid.js';
 
 const ROLE_NAME_MAX = 32;
 const REASON_MAX = 200;
@@ -50,7 +51,8 @@ export const validateDenyReason = (input) => validateReason(input, { max: REASON
 export function validateUserJid(jid) {
   const normalized = normalizeJid(jid);
   if (!normalized) return { ok: false, reason: 'No pude identificar al usuario.' };
-  if (!isUserJid(normalized)) return { ok: false, reason: 'Ese identificador no es un usuario de WhatsApp.' };
+  // un LID (…@lid) también identifica a una persona cuando WhatsApp oculta su número
+  if (!isUserJid(normalized) && !isLidJid(normalized)) return { ok: false, reason: 'Ese identificador no es un usuario de WhatsApp.' };
   return { ok: true, value: normalized };
 }
 

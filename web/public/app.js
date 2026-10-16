@@ -15,6 +15,13 @@ const safeRead = (key, fallback = null) => {
   } catch { return fallback; }
 };
 const safeWrite = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} };
+/** Tema guardado ('light' | 'dark') o null. Nunca lanza (modo privado, iframes sin almacenamiento). */
+const storedTheme = () => {
+  try {
+    const value = localStorage.getItem('stellar_theme');
+    return value === 'light' || value === 'dark' ? value : null;
+  } catch { return null; }
+};
 const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const formatNumber = (value) => new Intl.NumberFormat('es-ES').format(number(value));
 const formatBytes = (value) => {
@@ -96,7 +103,7 @@ const state = {
   authMode: 'api-login',
   pendingPlan: '',
   newTicketOpen: false,
-  theme: localStorage.getItem('stellar_theme') || 'dark',
+  theme: storedTheme() || 'dark',
   connectTarget: null,
   editTarget: null,
   flow: {
@@ -711,11 +718,18 @@ async function openConnect(instance) {
       .catch((error) => showToast(error.message, 'error'));
   }
   await syncLink(instance.id);
+  // si el usuario cerró el modal mientras esperábamos, no se sigue trabajando en segundo plano
+  if (!connectModalOpenFor(instance.id)) return;
   if (instance.status !== 'open' && instance.pairingMode === 'pairing' && !state.pairing.formatted) {
     // el registro quedó sin código: se pide a WhatsApp (real, no inventado)
     await requestPairing(instance.id, { silent: true });
   }
-  startLinkWatch(instance.id);
+  if (connectModalOpenFor(instance.id)) startLinkWatch(instance.id);
+}
+
+/** ¿El modal «Conectar» sigue abierto para este sub-bot? */
+function connectModalOpenFor(id) {
+  return state.modalMode === 'connect' && state.connectTarget?.id === id && !document.querySelector('#modal-layer')?.hidden;
 }
 
 /** Trae el estado real de vinculación del sub-bot y lo refleja en la UI. */
@@ -746,7 +760,7 @@ async function syncLink(id, { silent = false } = {}) {
  * Antes se hacía un setInterval de 4 s que repintaba todo. Ahora el
  * SSE avisa al instante y, si no hay stream, se consulta cada 10 s.
  */
-const linkWatch = { id: null, timer: null, attempts: 0, sse: false };
+const linkWatch = { id: null, timer: null, attempts: 0 };
 
 function stopLinkWatch(id = null) {
   if (id && linkWatch.id && linkWatch.id !== id) return;
@@ -761,10 +775,9 @@ function startLinkWatch(id) {
   stopLinkWatch();
   linkWatch.id = id;
   linkWatch.attempts = 0;
-  linkWatch.sse = state.stream.connected;
   linkWatch.timer = setInterval(() => {
     if (document.hidden) return;
-    if (linkWatch.sse) return; // el SSE ya informa en vivo
+    if (state.stream.connected) return; // el SSE ya informa en vivo
     linkWatch.attempts += 1;
     if (linkWatch.attempts > 24) { stopLinkWatch(); return; }
     syncLink(id, { silent: true });
@@ -772,6 +785,15 @@ function startLinkWatch(id) {
 }
 
 /* ── métricas (telemetría real del servidor) ─────────────────── */
+
+/** «SQLite 3.51 · node:sqlite · WAL» con lo que informa el servidor. */
+function databaseEngineLabel(db) {
+  if (!db) return 'SQLite';
+  const parts = [db.engine?.sqlite ? `SQLite ${db.engine.sqlite}` : 'SQLite'];
+  if (db.engine?.name) parts.push(db.engine.name);
+  if (db.journalMode) parts.push(String(db.journalMode).toUpperCase());
+  return parts.join(' · ');
+}
 
 function renderMetrics() {
   const sys = state.system;
@@ -794,7 +816,7 @@ function renderMetrics() {
   return `<div class="page-content"><div class="page-heading"><div><span class="section-kicker">${icon('chart')} Monitor del sistema</span><h1>Telemetría y Rendimiento</h1><p>Datos reales del servidor, la base de datos y tus sesiones de WhatsApp.</p></div><button class="btn btn-outline btn-small" type="button" data-action="refresh-data">${icon('link')} Actualizar</button></div>
     <div class="metrics-grid metrics-grid-large">${serverCards.map((metric) => `<article class="card telemetry-card"><span class="metric-label">${icon(metric.icon)}${escapeHtml(metric.label)}</span>${metric.indicator ? '<i class="metric-indicator"></i>' : ''}<strong class="metric-value">${escapeHtml(metric.value)}</strong><span class="metric-note">${metric.note}</span>${metric.progress != null ? `<div class="progress-track"><div class="progress-value ${metric.green ? 'green-fill' : ''}" style="width:${metric.progress}%"></div></div>` : ''}</article>`).join('')}</div>
 
-    <section class="section-block"><div class="section-heading"><div><span class="section-kicker">${icon('cpu')} Servidor</span><h2 class="section-title">Dónde corre tu bot</h2></div></div><div class="card service-list"><div class="service-row"><span class="service-info"><span class="green">●</span>${escapeHtml(server?.hostname || 'Servidor')}</span><span class="mono">${escapeHtml(server?.platform || '—')}</span><span class="service-meta"><span>${escapeHtml(server?.arch || '')}</span><span>Node ${escapeHtml(server?.node || '—')}</span></span></div><div class="service-row"><span class="service-info"><span class="green">●</span>Base de datos</span><span class="mono">${escapeHtml(db?.path || '—')}</span><span class="service-meta"><span>${db ? formatBytes(db.sizeBytes) : '—'}</span><span>SQLite (WAL)</span></span></div><div class="service-row"><span class="service-info"><span class="green">●</span>WhatsApp</span><span class="mono">${wa?.connected ?? 0}/${wa?.instances ?? 0} conectadas</span><span class="service-meta"><span>${wa?.groups ?? 0} grupos</span><span>Multi-Device</span></span></div></div></section>
+    <section class="section-block"><div class="section-heading"><div><span class="section-kicker">${icon('cpu')} Servidor</span><h2 class="section-title">Dónde corre tu bot</h2></div></div><div class="card service-list"><div class="service-row"><span class="service-info"><span class="green">●</span>${escapeHtml(server?.hostname || 'Servidor')}</span><span class="mono">${escapeHtml(server?.platform || '—')}</span><span class="service-meta"><span>${escapeHtml(server?.environment || server?.arch || '')}</span><span>Node ${escapeHtml(server?.node || '—')}</span></span></div><div class="service-row"><span class="service-info"><span class="green">●</span>Base de datos</span><span class="mono">${escapeHtml(db?.path || '—')}</span><span class="service-meta"><span>${db ? formatBytes(db.sizeBytes) : '—'}</span><span>${escapeHtml(databaseEngineLabel(db))}</span></span></div><div class="service-row"><span class="service-info"><span class="green">●</span>WhatsApp</span><span class="mono">${wa?.connected ?? 0}/${wa?.instances ?? 0} conectadas</span><span class="service-meta"><span>${wa?.groups ?? 0} grupos</span><span>Multi-Device</span></span></div></div></section>
 
     <section class="section-block"><div class="section-heading"><div><span class="section-kicker">${icon('bolt')} Uso real</span><h2 class="section-title">Top comandos</h2><p class="section-copy">Contados en la base de datos cada vez que se ejecutan.</p></div></div><div class="card ranking-list">${topCommands.length ? topCommands.map((entry, index) => `<div class="ranking-row"><span class="rank-number">#${index + 1}</span><span><code>${escapeHtml(entry.command)}</code><span class="ranking-bar-wrap"><i class="ranking-bar" style="display:block;width:${Math.round((entry.count / maxCount) * 100)}%"></i></span></span><strong class="mono">${formatNumber(entry.count)}</strong></div>`).join('') : '<div class="endpoint-empty">Todavía no se ejecutó ningún comando.</div>'}</div></section>
 
@@ -1640,6 +1662,10 @@ function handleKeydown(event) {
 /** Estado en vivo vía SSE: solo datos reales del servidor. */
 function applyInstanceState(snapshot) {
   if (!snapshot?.id) return;
+  // QR que se está mostrando ahora (modal «Conectar» o asistente de registro)
+  const shownQr = state.connectTarget?.id === snapshot.id
+    ? state.connectTarget?.linkData?.qr
+    : state.flow.instanceId === snapshot.id ? state.flow.linkData?.qr : undefined;
   const index = state.instances.findIndex((item) => item.id === snapshot.id);
   const merged = index >= 0 ? { ...state.instances[index], ...snapshot, live: true } : { ...snapshot, live: true };
   if (index >= 0) state.instances[index] = merged;
@@ -1658,6 +1684,9 @@ function applyInstanceState(snapshot) {
     stopLinkWatch(snapshot.id);
     if (state.connectTarget?.id === snapshot.id) showToast('¡Sesión vinculada con WhatsApp!', 'success');
     loadAdminData({ quiet: true });
+  } else if (shownQr !== undefined && snapshot.qr && snapshot.qr !== shownQr) {
+    // WhatsApp rotó el QR (~20 s): el evento solo trae el texto, se pide la imagen nueva
+    syncLink(snapshot.id, { silent: true });
   }
   scheduleRender();
 }
@@ -1711,8 +1740,8 @@ function mergeSnapshot(snapshot, { force = false } = {}) {
 async function boot() {
   applyThemeClass();
   // preferencia del sistema solo la primera vez
-  if (!localStorage.getItem('stellar_theme')) {
-    state.theme = window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  if (!storedTheme()) {
+    state.theme = window.matchMedia?.('(prefers-color-scheme: light)')?.matches ? 'light' : 'dark';
   }
   const loading = $('#main-content');
   if (loading && state.view !== 'landing') {
