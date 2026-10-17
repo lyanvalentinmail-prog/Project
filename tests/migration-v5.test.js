@@ -28,7 +28,7 @@ test('v5 conserva bots existentes y persiste el staff al reabrir la base de dato
     assert.equal(menu_style, 'versova');
     assert.equal(custom_config, '{}');
     assert.deepEqual(instancesRepo.byId('existing').admin_numbers, []);
-    assert.equal(db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get().value, '6');
+    assert.equal(db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get().value, '7');
 
     instancesRepo.setAdminNumbers('existing', ['+598 99 123 456', '5215512345678']);
     const saved = instancesRepo.byId('existing');

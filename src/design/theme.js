@@ -176,8 +176,10 @@ export function bar(value, total = 10, filled = '█', empty = '░') {
 
 /** Números estilizados para títulos de sección del menú. */
 export function fancyNumber(n) {
-  const map = ['𝟎𝟏', '𝟎𝟐', '𝟎𝟑', '𝟎𝟒', '𝟎𝟓', '𝟎𝟔', '𝟎𝟕', '𝟎𝟖', '𝟎𝟗', '𝟏𝟎'];
-  return map[Number(n) - 1] ?? String(n);
+  const digits = { 0: '𝟎', 1: '𝟏', 2: '𝟐', 3: '𝟑', 4: '𝟒', 5: '𝟓', 6: '𝟔', 7: '𝟕', 8: '𝟖', 9: '𝟗' };
+  const value = Math.max(1, Number(n) || 1);
+  const padded = value < 10 ? `0${value}` : String(value);
+  return [...padded].map((d) => digits[d] ?? d).join('');
 }
 
 /** Letra capitular decorativa para títulos. */

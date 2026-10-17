@@ -6,6 +6,7 @@
  * mensaje de error genérico (nunca un crash).
  */
 import * as T from './templates.js';
+import * as E from './extras.js';
 import { mainMenu, sectionHelp, commandHelp, availableSections, fullHelp } from './menu.js';
 import { error as errorTemplate } from './templates.js';
 
@@ -103,6 +104,63 @@ export const VIEWS = {
   'menu.section': sectionHelp,
   'menu.command': commandHelp,
   'menu.sections': availableSections,
+
+  // anime (paquete Raiden)
+  'anime.react': E.animeReact,
+
+  // economía (paquete Raiden)
+  'eco.balance': E.ecoBalance,
+  'eco.top': E.ecoTop,
+  'eco.einfo': E.ecoEinfo,
+  'eco.result': E.ecoResult,
+  'eco.daily': E.ecoDaily,
+  'eco.bet': E.ecoBet,
+  'eco.transfer': E.ecoTransfer,
+  'eco.steal': E.ecoSteal,
+  'eco.bank': E.ecoBank,
+
+  // descargas (paquete Raiden)
+  'dl.music': E.dlMusic,
+  'dl.link': E.dlLink,
+  'dl.lyrics': E.dlLyrics,
+
+  // perfil extendido (paquete Raiden)
+  'perfil.proposal': E.perfilProposal,
+  'perfil.wedding': E.perfilWedding,
+  'perfil.divorce': E.perfilDivorce,
+  'perfil.history': E.perfilHistory,
+  'perfil.pfp': E.perfilPfp,
+  'perfil.field': E.perfilField,
+
+  // stickers (paquete Raiden)
+  'sticker.guide': E.stickerGuide,
+  'sticker.brat': E.stickerBrat,
+  'sticker.meta': E.stickerMeta,
+  'sticker.search': E.stickerSearch,
+
+  // herramientas (paquete Raiden)
+  'tool.ia': E.toolIa,
+  'tool.ver': E.toolVer,
+  'tool.convert': E.toolConvert,
+
+  // logos (paquete Raiden)
+  'logo.card': E.logoCard,
+
+  // moderación extra (paquete Raiden)
+  'mod.promote': E.modPromote,
+  'mod.demote': E.modDemote,
+  'mod.tagall': E.modTagall,
+  'mod.notify': E.modNotify,
+  'mod.revoke': E.modRevoke,
+  'mod.mute': E.modMute,
+  'mod.unmute': E.modUnmute,
+  'mod.mutelist': E.modMutelist,
+  'mod.toggle': E.modToggle,
+  'mod.settext': E.modSettext,
+
+  // sistema extra (paquete Raiden)
+  'sys.status': E.sysStatus,
+  'sys.userid': E.sysUserid,
 };
 
 /**

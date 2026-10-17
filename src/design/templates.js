@@ -825,15 +825,17 @@ export function addResult({ targetName, ok, detail, inviteLink = null }) {
    ⑦ BIENVENIDA / DESPEDIDA
    ═══════════════════════════════════════════════════════════════ */
 
-export function welcome({ name, groupName, total, mention, registered }) {
+export function welcome({ name, groupName, total, mention, registered, customText = null, preview = false }) {
+  const custom = String(customText ?? '').trim();
   return [
     `ㅤㅤ${SYM.crown}`,
     `ㅤㅤ${SYM.bracketL} ${SYM.coffee} ${SYM.bracketR}`,
-    `ㅤㅤ𝐁𝐈𝐄𝐍𝐕𝐄𝐍𝐈𝐃${registered ? '𝐎 𝐃𝐄 𝐕𝐔𝐄𝐋𝐓𝐀' : '𝐈𝐃𝐎/𝐀'}`,
+    `ㅤㅤ𝐁𝐈𝐄𝐍𝐕𝐄𝐍𝐈𝐃${registered ? '𝐎 𝐃𝐄 𝐕𝐔𝐄𝐋𝐓𝐀' : '𝐈𝐃𝐎/𝐀'}${preview ? ' ㅤ·ㅤ𝑣𝑖𝑠𝑡𝑎 𝑝𝑟𝑒𝑣𝑖𝑎' : ''}`,
     `ㅤㅤ${groupName}`,
     RULE.coffee,
     `ㅤ${mention}`,
     `ㅤ${SYM.arrow}ㅤ${name} se unió al team.`,
+    custom ? `ㅤ${SYM.star}ㅤ${custom}` : null,
     registered
       ? `ㅤ${SYM.leaf}ㅤTu ficha anterior fue restaurada.`
       : `ㅤ${SYM.leaf}ㅤRegístrate para empezar a rolear:`,
@@ -849,12 +851,14 @@ export function welcome({ name, groupName, total, mention, registered }) {
     .join('\n');
 }
 
-export function farewell({ name, groupName, role, total, reason = 'leave' }) {
+export function farewell({ name, groupName, role, total, reason = 'leave', customText = null, preview = false }) {
   const titles = { leave: '𝐀𝐃𝐈𝐎́𝐒', kick: '𝐄𝐗𝐏𝐔𝐋𝐒𝐀𝐃𝐎/𝐀', ban: '𝐁𝐀𝐍𝐄𝐀𝐃𝐎/𝐀' };
+  const custom = String(customText ?? '').trim();
   return [
-    `ㅤ${SYM.bracketL} ${SYM.moon} ${SYM.bracketR} ㅤ${titles[reason] ?? titles.leave}`,
+    `ㅤ${SYM.bracketL} ${SYM.moon} ${SYM.bracketR} ㅤ${titles[reason] ?? titles.leave}${preview ? ' ㅤ·ㅤ𝑣𝑖𝑠𝑡𝑎 𝑝𝑟𝑒𝑣𝑖𝑎' : ''}`,
     RULE.night,
     `ㅤ${SYM.leaf}ㅤ${name} dejó ${groupName}.`,
+    custom ? `ㅤ${SYM.star}ㅤ${custom}` : null,
     role ? `ㅤ${SYM.leaf}ㅤSu personaje ${SYM.chopsticks} ${role} quedó libre.` : null,
     `ㅤ${SYM.leaf}ㅤQuedan ${total} integrantes registrados.`,
     RULE.night,
@@ -1156,6 +1160,9 @@ export function configList({ config, groupName }) {
     ['despedida', config.farewell ? 'activada' : 'desactivada'],
     ['aviso AFK', config.afk_mentions ? 'activado' : 'desactivado'],
     ['parejas', config.couple_enabled ? 'activadas' : 'desactivadas'],
+    ['solo admins', config.adminonly ? 'activado' : 'desactivado'],
+    ['antilink', config.antilink ? 'activado' : 'desactivado'],
+    ['alertas', config.alerts !== false ? 'activadas' : 'desactivadas'],
   ];
   return [
     `${SYM.bracketL} ⚙ ${SYM.bracketR} ㅤ𝐶𝑜𝑛𝑓𝑖𝑔 ㅤ·ㅤ ${groupName}`,

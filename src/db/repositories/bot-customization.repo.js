@@ -7,7 +7,7 @@
 
 import { getDb } from '../connection.js';
 
-export const ALLOWED_MENU_STYLES = Object.freeze(['versova', 'minimal', 'elegant', 'cyber', 'compact', 'retro']);
+export const ALLOWED_MENU_STYLES = Object.freeze(['versova', 'minimal', 'elegant', 'cyber', 'compact', 'retro', 'raiden']);
 export const DEFAULT_MENU_STYLE = 'versova';
 
 const DEFAULT_CUSTOM = Object.freeze({

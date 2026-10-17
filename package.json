@@ -15,6 +15,7 @@
     "termux": "bash scripts/termux-start.sh",
     "termux:setup": "bash scripts/termux-setup.sh",
     "sim": "node tools/simulator.js",
+    "docs": "node tools/generate-command-docs.js",
     "test": "node --test --test-concurrency=1",
     "db:inspect": "node scripts/db-inspect.js",
     "db:reset": "node scripts/db-reset.js",

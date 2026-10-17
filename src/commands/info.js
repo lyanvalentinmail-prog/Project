@@ -4,6 +4,7 @@
 import { IDENTITY } from '../config/identity.js';
 import { env } from '../config/env.js';
 import { groupsRepo, usersRepo, rolesRepo, instancesRepo } from '../db/index.js';
+import { customRepo } from '../db/repositories/bot-customization.repo.js';
 import { ok, fail } from '../services/result.js';
 import { runConfirmation, cancelConfirmation } from '../security/confirm.js';
 import { mainMenu, sectionHelp, commandHelp, availableSections } from '../design/menu.js';
@@ -20,19 +21,43 @@ export const infoCommands = [
     name: 'menu',
     category: 'info',
     permission: 'all',
-    description: 'Muestra el menú oficial de comandos de VÉRSOVA.',
-    example: '.menu',
+    args: '[categoría]',
+    description: 'Muestra el menú de comandos del bot. Con una categoría, la muestra filtrada.',
+    example: '.menu anime',
     groupOnly: false,
     run: (ctx) => {
-      // Pasar instancia para que el menú sea personalizado por bot
-      return ok('menu.main', {
+      const base = {
         status: 'ᴏɴʟɪɴᴇ',
         prefix: ctx.instance?.prefix ?? ctx.prefix ?? IDENTITY.prefix,
         name: IDENTITY.name,
         team: IDENTITY.team,
         version: IDENTITY.version,
         instance: ctx.instance ?? null,
-      });
+        userName: ctx.author?.name ?? null,
+      };
+      const query = (ctx.argList[0] ?? '').toLowerCase().trim();
+      if (query && registryRef) {
+        const all = registryRef.list;
+        const known = all.some((c) => c.category === query && !c.hidden);
+        let customKnown = false;
+        try {
+          const custom = ctx.instance ? customRepo.get(ctx.instance.id) : null;
+          customKnown = (custom?.categories ?? []).some((c) => String(c.id).toLowerCase() === query);
+        } catch {}
+        if (known || customKnown) {
+          // Estilo raiden: filtra dentro del propio menú; otros estilos:
+          // ficha detallada de la sección.
+          let style = null;
+          try {
+            style = ctx.instance ? customRepo.get(ctx.instance.id)?.menuStyle ?? null : null;
+          } catch {}
+          if (style === 'raiden') return ok('menu.main', { ...base, filter: query });
+          return ok('menu.section', { section: query, commands: all });
+        }
+        return ok('menu.sections', { commands: all });
+      }
+      // Pasar instancia para que el menú sea personalizado por bot
+      return ok('menu.main', base);
     },
   },
   {

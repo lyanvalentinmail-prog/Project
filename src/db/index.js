@@ -19,3 +19,5 @@ export { auditRepo, AUDIT_ACTIONS } from './repositories/audit.repo.js';
 export { activationKeysRepo, formatKey, normalizeKey, KEY_TTL_MS } from './repositories/activation-keys.repo.js';
 export { ticketsRepo } from './repositories/tickets.repo.js';
 export { statsRepo } from './repositories/stats.repo.js';
+export { economyRepo } from './repositories/economy.repo.js';
+export { mutedRepo, stickerMetaRepo, marriageRepo, profileExtrasRepo } from './repositories/extras.repo.js';

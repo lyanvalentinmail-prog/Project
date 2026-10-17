@@ -15,6 +15,13 @@ const BUILTIN_META = {
   team: { id: 'team', title: '𝕲𝐄𝐒𝐓𝐈𝐎𝐍', icon: '𖤐', sub: '𝗍𝖾𝖺𝗆 𝗆𝖺𝗇𝖺𝗀𝖾𝗆𝖾𝗇𝗍', kaomoji: KAOMOJI.cheer, index: 4 },
   social: { id: 'social', title: '𝕴𝐍𝐓𝐄𝐑𝐀𝐂𝐂𝐈𝐎𝐍', icon: '🥢', sub: '𝗌𝗈𝖼𝗂𝖺𝗅 & 𝖿𝗎𝗇', kaomoji: KAOMOJI.hug, index: 5 },
   admin: { id: 'admin', title: '𝕬𝐃𝐌𝐈𝐍𝐈𝐒𝐓𝐑𝐀𝐂𝐈𝐎𝐍', icon: '⛓️', sub: '𝗌𝗍𝖺𝖿𝖿 𝗈𝗇𝗅𝗒', kaomoji: KAOMOJI.serious, index: 6 },
+  anime: { id: 'anime', title: '𝕬𝐍𝐈𝐌𝐄', icon: '🧈', sub: '𝖺𝗇𝗂𝗆𝖾 𝗋𝖾𝖺𝖼𝗍𝗂𝗈𝗇𝗌', kaomoji: KAOMOJI.hug, index: 7 },
+  economy: { id: 'economy', title: '𝕰𝐂𝐎𝐍𝐎𝐌𝐈𝐀', icon: '🪷', sub: '𝗒𝖾𝗇𝖾𝗌 & 𝗀𝖺𝗆𝖻𝗅𝖾', kaomoji: KAOMOJI.smug, index: 8 },
+  download: { id: 'download', title: '𝕯𝐄𝐒𝐂𝐀𝐑𝐆𝐀𝐒', icon: '🛍️', sub: '𝗆𝗎𝗌𝗂𝖼 & 𝗆𝖾𝖽𝗂𝖺', kaomoji: KAOMOJI.cool, index: 9 },
+  perfil: { id: 'perfil', title: '𝕻𝐄𝐑𝐅𝐈𝐋', icon: '🌸', sub: '𝗅𝗈𝗏𝖾 & 𝖽𝖺𝗍𝗈𝗌', kaomoji: KAOMOJI.love, index: 10 },
+  stickers: { id: 'stickers', title: '𝕾𝐓𝐈𝐂𝐊𝐄𝐑𝐒', icon: '⭐', sub: '𝗌𝗍𝗂𝖼𝗄𝖾𝗋 𝗆𝖺𝗄𝖾𝗋', kaomoji: KAOMOJI.wink, index: 11 },
+  tools: { id: 'tools', title: '𝕳𝐄𝐑𝐑𝐀𝐌𝐈𝐄𝐍𝐓𝐀𝐒', icon: '💐', sub: '𝗂𝖺 & 𝗎𝗍𝗂𝗅𝗂𝖽𝖺𝖽𝖾𝗌', kaomoji: KAOMOJI.cool, index: 12 },
+  logos: { id: 'logos', title: '𝕷𝐎𝐆𝐎𝐒', icon: '🍰', sub: '𝗅𝗈𝗀𝗈 𝗆𝖺𝗄𝖾𝗋', kaomoji: KAOMOJI.sparkle, index: 13 },
 };
 
 function getMetaForCategory(id, customCategories) {

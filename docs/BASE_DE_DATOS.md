@@ -11,7 +11,7 @@ Motor: **SQLite** en modo **WAL**, con uno de estos dos controladores (misma API
 `DB_JOURNAL_MODE` (por defecto `WAL`) cambia el diario; si el sistema de archivos no admite WAL,
 la conexión pasa sola a `DELETE`. El panel (Métricas) y `npm run doctor` muestran el motor real.
 
-Archivo: `data/versova.db` (fuera de git). Esquema v5. Mientras el bot corre existe
+Archivo: `data/versova.db` (fuera de git). Esquema v7. Mientras el bot corre existe
 `data/versova.pid`: impide abrir una segunda copia con los mismos datos.
 
 **Identidades LID.** WhatsApp identifica a muchos participantes con un jid `…@lid` en lugar
@@ -172,6 +172,7 @@ Además, `roles.assign()` lleva la condición `status != 'taken' OR owner_jid = 
 | `status` | TEXT | `active · left · kicked · banned` |
 | `left_at` | INTEGER | Cuándo salió |
 | `push_name` | TEXT | Nombre de WhatsApp (respaldo) |
+| `profile_birth` / `profile_desc` / `profile_genre` | TEXT (v7) | Cumpleaños, descripción y género del perfil extendido |
 
 Índices: `(group_id, last_activity)`, `(group_id, role_id)`, `(group_id, partner_jid)`.
 
@@ -291,6 +292,20 @@ Lo que la web muestra en Métricas sale de aquí o de consultas reales: **nada d
 | `coupons` / `coupon_uses` / `credit_transactions` | Cupones y movimientos de créditos |
 
 La web y los bots comparten la misma base de datos: lo que ves en el panel son filas reales.
+
+---
+
+## Paquete Raiden (v7): economía, muteos, stickers y matrimonios
+
+| Tabla | Clave | Uso |
+|---|---|---|
+| `economy` | `(group_id, jid)` | Cartera (`coins`), banco (`bank`), racha (`streak`) y marcas de cooldown (`last_work`, `last_slut`, `last_crime`, `last_rob`, `last_daily`) |
+| `group_muted` | `(group_id, user_jid)` | Usuarios silenciados: motivo, quién lo hizo y cuándo |
+| `sticker_meta` | `(group_id, user_jid)` | Pack y autor por defecto para los stickers de cada usuario |
+| `marriages` | `id` | Matrimonios: pareja (`a_jid`, `b_jid`), fecha de boda y de divorcio (`NULL` = vigente) |
+
+Todo segmentado por `group_id`, como el resto del esquema. Las propuestas de matrimonio
+viven solo en memoria (caducan a los 5 minutos) y no tocan la base de datos.
 
 ---
 
