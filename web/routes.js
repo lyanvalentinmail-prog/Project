@@ -62,32 +62,48 @@ function sampleCpu() {
 }
 
 /** Sub-bot en formato público (sin datos sensibles). */
-export const publicInstance = (row) => ({
-  id: row.id,
-  name: row.name,
-  phone: row.phone,
-  phoneMasked: maskPhone(row.phone),
-  pairingMode: row.pairing_mode ?? (row.pairingMode ? 'pairing' : 'qr'),
-  prefix: row.prefix ?? '.',
-  adminNumbers: row.admin_numbers ?? [],
-  activated: Boolean(row.activated),
-  activatedAt: row.activated_at ?? null,
-  status: row.status,
-  waJid: row.wa_jid ?? row.jid ?? null,
-  pushName: row.push_name ?? row.pushName ?? null,
-  live: Boolean(row.live),
-  autostart: Boolean(row.autostart),
-  createdAt: row.created_at ?? null,
-  lastConnectedAt: row.last_connected_at ?? null,
-  lastError: row.last_error ?? row.lastError ?? null,
-  uptimeMs: row.uptimeMs ?? 0,
-  reconnectAttempts: row.reconnectAttempts ?? 0,
-  pairingCode: row.pairingCode ?? null,
-  pairingFormatted: formatPairingCode(row.pairingCode),
-  pairingCodeAt: row.pairingCodeAt ?? null,
-  qr: row.qr ?? null,
-  groups: row.groups ?? groupsRepo.all(row.id).length,
-});
+export const publicInstance = (row) => {
+  let customSummary = { menuStyle: row.menu_style || 'versova', disabledCount: 0, customCount: 0, aliasCount: 0, categoryCount: 0 };
+  try {
+    const cfg = row.custom_config ? JSON.parse(row.custom_config) : {};
+    customSummary = {
+      menuStyle: row.menu_style || cfg.menuStyle || 'versova',
+      disabledCount: Array.isArray(cfg.disabled) ? cfg.disabled.length : 0,
+      customCount: Array.isArray(cfg.customCommands) ? cfg.customCommands.length : 0,
+      aliasCount: cfg.aliases ? Object.keys(cfg.aliases).reduce((a,k)=>a + (cfg.aliases[k]?.length||0),0) : 0,
+      categoryCount: Array.isArray(cfg.categories) ? cfg.categories.length : 0,
+    };
+  } catch {}
+  return {
+    id: row.id,
+    name: row.name,
+    phone: row.phone,
+    phoneMasked: maskPhone(row.phone),
+    pairingMode: row.pairing_mode ?? (row.pairingMode ? 'pairing' : 'qr'),
+    prefix: row.prefix ?? '.',
+    adminNumbers: row.admin_numbers ?? [],
+    activated: Boolean(row.activated),
+    activatedAt: row.activated_at ?? null,
+    status: row.status,
+    waJid: row.wa_jid ?? row.jid ?? null,
+    pushName: row.push_name ?? row.pushName ?? null,
+    live: Boolean(row.live),
+    autostart: Boolean(row.autostart),
+    createdAt: row.created_at ?? null,
+    lastConnectedAt: row.last_connected_at ?? null,
+    lastError: row.last_error ?? row.lastError ?? null,
+    uptimeMs: row.uptimeMs ?? 0,
+    reconnectAttempts: row.reconnectAttempts ?? 0,
+    pairingCode: row.pairingCode ?? null,
+    pairingFormatted: formatPairingCode(row.pairingCode),
+    pairingCodeAt: row.pairingCodeAt ?? null,
+    qr: row.qr ?? null,
+    groups: row.groups ?? groupsRepo.all(row.id).length,
+    menuStyle: row.menu_style || 'versova',
+    customConfig: row.custom_config || '{}',
+    customSummary,
+  };
+};
 
 /**
  * Estado compacto y estable del panel. Se usa en el SSE (evento
@@ -112,7 +128,7 @@ export function buildStateSnapshot(manager) {
   // También cambia al editar el bot, no solo al cambiar la conexión:
   // así el editor vuelve a abrir con los números recién guardados.
   const settingsRevision = createHash('sha256')
-    .update(JSON.stringify(instances.map((i) => [i.id, i.name, i.prefix, i.adminNumbers, i.autostart])))
+    .update(JSON.stringify(instances.map((i) => [i.id, i.name, i.prefix, i.adminNumbers, i.autostart, i.menuStyle, i.customConfig])))
     .digest('hex');
   payload.revision = `${instances.map((i) => `${i.id}:${i.status}:${i.activated ? 1 : 0}:${i.pairingCode ? 'c' : '-'}${i.uptimeMs ? 'u' : '-'}`).join(',')}|${stats.connected}|${stats.pending}|${payload.stats.pendingPairing}|${settingsRevision}`;
   return payload;
@@ -632,6 +648,63 @@ export function createRouter({ manager, auth }) {
         hidden: Boolean(c.hidden),
       })),
     });
+  });
+
+  /* ── personalización por bot (alias, comandos, categorías, estilos) ── */
+
+  router.get('/menu/styles', (_req, res) => {
+    import('../src/design/menu-styles.js').then((m) => {
+      res.json({ ok: true, styles: m.listStyles() });
+    }).catch(() => res.json({ ok: true, styles: [] }));
+  });
+
+  router.get('/instances/:id/customization', (req, res) => {
+    const instance = instancesRepo.byId(req.params.id);
+    if (!instance) return res.status(404).json({ ok: false, error: 'Sub-bot no encontrado.' });
+    import('../src/db/repositories/bot-customization.repo.js').then(({ customRepo }) => {
+      const cfg = customRepo.get(instance.id);
+      res.json({ ok: true, instanceId: instance.id, customization: cfg });
+    });
+  });
+
+  router.put('/instances/:id/customization', async (req, res) => {
+    const instance = instancesRepo.byId(req.params.id);
+    if (!instance) return res.status(404).json({ ok: false, error: 'Sub-bot no encontrado.' });
+    const payload = req.body ?? {};
+    try {
+      const { customRepo, validateCustomization, ALLOWED_MENU_STYLES } = await import('../src/db/repositories/bot-customization.repo.js');
+      const globalCommands = registry.list;
+      const validation = validateCustomization(payload, { globalCommands });
+      if (!validation.ok) return res.status(400).json({ ok: false, error: validation.errors.join(' | '), errors: validation.errors });
+      const saved = customRepo.set(instance.id, validation.data);
+      auditRepo.log({ instanceId: instance.id, action: 'instance.customization.updated', detail: { menuStyle: saved.menuStyle, disabled: saved.disabled.length, custom: saved.customCommands.length, categories: saved.categories.length } });
+      return res.json({ ok: true, customization: saved, instance: publicInstance(instancesRepo.byId(instance.id)) });
+    } catch (e) {
+      return res.status(400).json({ ok: false, error: e.message || 'No se pudo guardar.' });
+    }
+  });
+
+  router.get('/instances/:id/preview', async (req, res) => {
+    const instance = instancesRepo.byId(req.params.id);
+    if (!instance) return res.status(404).json({ ok: false, error: 'Sub-bot no encontrado.' });
+    const style = String(req.query.style || '').trim().toLowerCase() || null;
+    try {
+      const { renderMenuFor } = await import('../src/services/menu.service.js');
+      const text = renderMenuFor(instance, { style });
+      res.json({ ok: true, style: style || instance.menu_style || 'versova', preview: text, prefix: instance.prefix });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: String(e.message) });
+    }
+  });
+
+  router.get('/instances/:id/commands', async (req, res) => {
+    const instance = instancesRepo.byId(req.params.id);
+    if (!instance) return res.status(404).json({ ok: false, error: 'Sub-bot no encontrado.' });
+    const { listCommandsForInstance } = await import('../src/core/custom-registry.js');
+    const { customRepo } = await import('../src/db/repositories/bot-customization.repo.js');
+    const cfg = customRepo.get(instance.id);
+    const cmds = listCommandsForInstance(instance);
+    res.json({ ok: true, instanceId: instance.id, prefix: instance.prefix, menuStyle: cfg.menuStyle, commands: cmds, customization: cfg });
   });
 
   router.get('/warnings/:groupId', (req, res) => {

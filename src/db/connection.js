@@ -88,6 +88,32 @@ const MIGRATIONS = [
       database.exec("ALTER TABLE bot_instances ADD COLUMN admin_numbers TEXT NOT NULL DEFAULT '[]'");
     },
   },
+  {
+    version: 6,
+    name: 'personalización de menú por bot (estilos, alias, comandos, categorías)',
+    up(database) {
+      // Añade columnas si no existen (SQLite no tiene IF NOT EXISTS para ALTER)
+      const cols = database.prepare("PRAGMA table_info(bot_instances)").all().map((r) => r.name);
+      if (!cols.includes('menu_style')) {
+        database.exec("ALTER TABLE bot_instances ADD COLUMN menu_style TEXT NOT NULL DEFAULT 'versova'");
+      }
+      if (!cols.includes('custom_config')) {
+        database.exec("ALTER TABLE bot_instances ADD COLUMN custom_config TEXT NOT NULL DEFAULT '{}'");
+      }
+      // Normaliza valores existentes
+      try { database.exec("UPDATE bot_instances SET menu_style='versova' WHERE menu_style IS NULL OR menu_style=''"); } catch {}
+      try { database.exec("UPDATE bot_instances SET custom_config='{}' WHERE custom_config IS NULL OR custom_config=''"); } catch {}
+      // Tabla espejo para auditoría / compat (no crítica)
+      try {
+        database.exec(`CREATE TABLE IF NOT EXISTS bot_customizations (
+          instance_id TEXT PRIMARY KEY REFERENCES bot_instances(id) ON DELETE CASCADE,
+          menu_style  TEXT NOT NULL DEFAULT 'versova',
+          config      TEXT NOT NULL DEFAULT '{}',
+          updated_at  INTEGER NOT NULL
+        )`);
+      } catch {}
+    },
+  },
 ];
 
 /** Devuelve la conexión activa (la crea si aún no existe). */

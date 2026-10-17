@@ -58,6 +58,10 @@ for (const [source, commands] of MODULES) {
 
 setRegistry({ list, map, get: (name) => map.get(String(name ?? '').toLowerCase()) ?? null });
 
+/** Para validación de alias/custom sin colisión */
+export const GLOBAL_COMMAND_NAMES = Object.freeze([...new Set([...map.keys(), ...list.map((c)=>c.name)])]);
+export const GLOBAL_ALIASES = ALIASES;
+
 export const registry = Object.freeze({
   /** Todos los comandos (sin alias duplicados). */
   get list() {
