@@ -37,22 +37,23 @@ export const infoCommands = [
     category: 'info',
     permission: 'all',
     args: '[sección | comando]',
-    description: 'Ayuda detallada por sección o por comando.',
-    example: '.help roles',
+    description: 'Explica todos los comandos del bot. Con un argumento detalla una sección o un comando.',
+    example: '.help',
     groupOnly: false,
     run: (ctx) => {
       const registry = registryRef;
       const all = registry ? registry.list : [];
       const query = (ctx.argList[0] ?? '').toLowerCase();
-      if (!query) return ok('menu.sections', { commands: all });
+      if (query) {
+        const command = registry?.get(query);
+        if (command) return ok('menu.command', { ...command });
 
-      const command = registry?.get(query);
-      if (command) return ok('menu.command', { ...command });
+        const section = all.find((c) => c.category === query)?.category;
+        if (section) return ok('menu.section', { section, commands: all });
 
-      const section = all.find((c) => c.category === query)?.category;
-      if (section) return ok('menu.section', { section, commands: all });
-
-      return ok('menu.sections', { commands: all });
+        return ok('menu.sections', { commands: all });
+      }
+      return ok('menu.full', { commands: all });
     },
   },
   {

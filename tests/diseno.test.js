@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { VIEWS, render } from '../src/design/index.js';
-import { mainMenu, sectionHelp, commandHelp, availableSections } from '../src/design/menu.js';
+import { mainMenu, sectionHelp, commandHelp, availableSections, fullHelp } from '../src/design/menu.js';
 import { registry } from '../src/commands/index.js';
 import { IDENTITY } from '../src/config/identity.js';
 import { KAOMOJI, SYM, RULE, mention } from '../src/design/theme.js';
@@ -51,6 +51,7 @@ function fakeData() {
 test('todas las vistas del catálogo renderizan texto sin errores', () => {
   const special = {
     'menu.main': {},
+    'menu.full': { commands: registry.list },
     'menu.sections': { commands: registry.list },
     'menu.section': { section: 'roles', commands: registry.list },
     'menu.command': { ...registry.get('reg') },
@@ -150,6 +151,21 @@ test('la ayuda por sección y por comando se genera desde el registro', () => {
   const one = commandHelp(registry.get('reservar'));
   assert.ok(one.includes('.reservar'));
   assert.ok(one.includes('24'), 'explica la reserva');
+});
+
+test('.help explica todos los comandos del registro', () => {
+  const full = fullHelp({ commands: registry.list });
+  for (const command of registry.list.filter((c) => !c.hidden)) {
+    assert.ok(full.includes(`${IDENTITY.prefix}${command.name}`), `falta ${command.name} en la ayuda completa`);
+    assert.ok(full.includes(command.description), `falta la explicación de ${command.name}`);
+  }
+  assert.ok(full.includes('ejemplo:'), 'la ayuda completa incluye ejemplos');
+
+  const help = registry.get('help');
+  assert.equal(help.run({ argList: [] }).view, 'menu.full', 'sin argumentos explica todos los comandos');
+  assert.equal(help.run({ argList: ['reg'] }).view, 'menu.command');
+  assert.equal(help.run({ argList: ['registro'] }).view, 'menu.section');
+  assert.equal(help.run({ argList: ['noexiste'] }).view, 'menu.sections');
 });
 
 test('la estética usa los símbolos y kaomojis pedidos', () => {

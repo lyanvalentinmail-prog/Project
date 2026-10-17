@@ -97,7 +97,7 @@ Caducan a los **60 segundos**. También piden confirmación: `.liberar`, `.termi
 | Comando | Permiso | Qué hace |
 |---|---|---|
 | `.menu` | todos | Muestra el menú oficial de comandos de VÉRSOVA.<br />Ejemplo: `.menu`<br />Alias: `.ayuda` `.comandos` `.start` `.menucompleto` |
-| `.help` `[sección | comando]` | todos | Ayuda detallada por sección o por comando.<br />Ejemplo: `.help roles` |
+| `.help` `[sección | comando]` | todos | Explica todos los comandos del bot con su uso, ejemplo y permiso. Con un argumento detalla una sección o un comando.<br />Ejemplo: `.help` · `.help registro` · `.help reservar` |
 | `.ping` | todos | Latencia del bot y resumen de actividad.<br />Ejemplo: `.ping` |
 | `.botinfo` | todos | Información técnica del bot: versión, grupos, fichas y sub-bots activos.<br />Ejemplo: `.botinfo` |
 | `.owner` | todos | Muestra al owner del bot (número enmascarado).<br />Ejemplo: `.owner` |

@@ -284,6 +284,7 @@ async function demo() {
     [moon, '.botinfo', 'información técnica'],
     [moon, '.ping', 'latencia'],
     [moon, '.owner', 'owner del bot'],
+    [moon, '.help', 'explicación de todos los comandos'],
     [moon, '.help roles', 'ayuda de la sección de personajes'],
     [moon, '.help reservar', 'ayuda de un comando'],
     [moon, '.reservarr', 'comando mal escrito (sugerencia)'],

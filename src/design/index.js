@@ -6,7 +6,7 @@
  * mensaje de error genérico (nunca un crash).
  */
 import * as T from './templates.js';
-import { mainMenu, sectionHelp, commandHelp, availableSections } from './menu.js';
+import { mainMenu, sectionHelp, commandHelp, availableSections, fullHelp } from './menu.js';
 import { error as errorTemplate } from './templates.js';
 
 /** Mapa vista → plantilla. Cada clave es lo que devuelven los servicios. */
@@ -99,6 +99,7 @@ export const VIEWS = {
 
   // menú
   'menu.main': mainMenu,
+  'menu.full': fullHelp,
   'menu.section': sectionHelp,
   'menu.command': commandHelp,
   'menu.sections': availableSections,
@@ -142,4 +143,4 @@ export function renderResult(result) {
 
 export * from './theme.js';
 export * from './templates.js';
-export { mainMenu, sectionHelp, commandHelp, availableSections } from './menu.js';
+export { mainMenu, sectionHelp, commandHelp, availableSections, fullHelp } from './menu.js';

@@ -227,6 +227,52 @@ export function availableSections(data = {}) {
   ].join('\n');
 }
 
+/** `.help` — explicación de TODOS los comandos, generada desde el registro. */
+export function fullHelp(data = {}) {
+  const commands = Array.isArray(data) ? data : data.commands ?? [];
+  const visible = commands.filter((c) => !c.hidden);
+  const blocks = [];
+
+  for (const [key, meta] of Object.entries(SECTION_META)) {
+    const list = visible.filter((c) => c.category === key);
+    if (!list.length) continue;
+    const body = list
+      .map((c) => {
+        const args = c.args ? ` ${c.args}` : '';
+        const notes = [];
+        if (c.example) notes.push(`ejemplo: ${c.example}`);
+        notes.push(`permiso: ${PERMISSION_LABEL[c.permission] ?? c.permission}`);
+        return [
+          `ㅤ${SYM.clover}ㅤ${P}${c.name}${args}`,
+          `ㅤㅤㅤ${c.description}`,
+          `ㅤㅤㅤ${SYM.leaf} ${notes.join(` ${SYM.dot} `)}`,
+        ].join('\n');
+      })
+      .join('\n');
+    blocks.push(
+      [
+        `ㅤㅤ◢ ${fancyNumber(meta.index)} ◣`,
+        `${meta.icon}ㅤ׃ㅤ ~${meta.title}~ ㅤ׃`,
+        `ㅤㅤ${SYM.scroll} ${meta.sub} ${SYM.scroll}`,
+        RULE.thin,
+        body,
+      ].join('\n'),
+    );
+  }
+
+  if (!blocks.length) return availableSections({ commands });
+
+  return [
+    `${SYM.bracketL} ${SYM.scroll} ${SYM.bracketR} ㅤ𝐸𝑥𝑝𝑙𝑖𝑐𝑎𝑐𝑖𝑜𝑛 𝑑𝑒 𝑡𝑜𝑑𝑜𝑠 𝑙𝑜𝑠 𝑐𝑜𝑚𝑎𝑛𝑑𝑜𝑠`,
+    RULE.dotted,
+    blocks.join(`\n${RULE.dotted}\n`),
+    RULE.thin,
+    `ㅤDetalle de un comando: ㅤ${SYM.clover} ${P}help <comando>`,
+    `ㅤPor sección: ㅤ${SYM.clover} ${P}help <sección> · menú: ${SYM.clover} ${P}menu`,
+    `ㅤ${SYM.crown}`,
+  ].join('\n');
+}
+
 /** `.help <comando>` — ficha de un comando concreto. */
 export function commandHelp(command) {
   const meta = SECTION_META[command.category] ?? {};
