@@ -114,6 +114,25 @@ const MIGRATIONS = [
       } catch {}
     },
   },
+  {
+    version: 7,
+    name: 'paquete Raiden: economía, muteos, stickers y matrimonios',
+    up(database) {
+      const schema = fs.readFileSync(path.join(here, 'schema-v7.sql'), 'utf8');
+      database.exec(schema);
+      // Campos extra de perfil en users (SQLite no tiene IF NOT EXISTS para ALTER)
+      const cols = database.prepare('PRAGMA table_info(users)').all().map((r) => r.name);
+      if (!cols.includes('profile_birth')) {
+        database.exec("ALTER TABLE users ADD COLUMN profile_birth TEXT NOT NULL DEFAULT ''");
+      }
+      if (!cols.includes('profile_desc')) {
+        database.exec("ALTER TABLE users ADD COLUMN profile_desc TEXT NOT NULL DEFAULT ''");
+      }
+      if (!cols.includes('profile_genre')) {
+        database.exec("ALTER TABLE users ADD COLUMN profile_genre TEXT NOT NULL DEFAULT ''");
+      }
+    },
+  },
 ];
 
 /** Devuelve la conexión activa (la crea si aún no existe). */

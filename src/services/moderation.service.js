@@ -9,7 +9,7 @@
  *   3. ¿el bot es admin del grupo?
  * Y las acciones destructivas piden confirmación por texto.
  */
-import { usersRepo, groupsRepo, warningsRepo, requestsRepo, rolesRepo, confirmationsRepo, auditRepo, tx } from '../db/index.js';
+import { usersRepo, groupsRepo, warningsRepo, requestsRepo, rolesRepo, confirmationsRepo, auditRepo, mutedRepo, tx } from '../db/index.js';
 import { ok, fail, msg, action } from './result.js';
 import { registerConfirmAction } from '../security/confirm.js';
 import { canModerate, requireBotAdmin, isBotOwner } from '../security/permissions.js';
@@ -439,3 +439,458 @@ export async function inviteLink(ctx) {
 
 /** ¿El autor es el owner del bot? (lo usan varios comandos) */
 export const authorIsBotOwner = (ctx) => isBotOwner(ctx.author?.jid);
+
+/* ═══════════════════════════════════════════════════════════════
+   Paquete Raiden: rangos, menciones, muteos y toggles del grupo
+   ═══════════════════════════════════════════════════════════════ */
+
+const ENABLE_WORDS = new Set(['on', '1', 'enable', 'encendido', 'encender', 'activar', 'activado', 'si', 'sí', 'true']);
+const DISABLE_WORDS = new Set(['off', '0', 'disable', 'apagado', 'apagar', 'desactivar', 'desactivado', 'no', 'false']);
+
+function parseToggle(raw) {
+  const input = String(raw ?? '').trim().toLowerCase();
+  if (!input) return null;
+  if (ENABLE_WORDS.has(input)) return true;
+  if (DISABLE_WORDS.has(input)) return false;
+  return null;
+}
+
+function targetName(ctx, jid) {
+  const row = usersRepo.get(ctx.group.groupId, jid);
+  return row?.name ?? ctx.client?.contactName?.(jid) ?? maskPhone(jid);
+}
+
+/** `.promote <@usuario>` — lo hace admin del grupo en WhatsApp. */
+export async function promote(ctx, arg = null) {
+  const prepared = prepareModeration(ctx, { arg, command: 'promote', needBotAdmin: true });
+  if (prepared.error) return prepared.error;
+  if (prepared.targetIsAdmin) {
+    return fail('sys.invalid', {
+      command: 'promote',
+      message: `${prepared.targetName} ya es administrador del grupo.`,
+    });
+  }
+  await ctx.client.groupParticipantsUpdate(ctx.group.groupId, [prepared.jid], 'promote').catch(() => null);
+  auditRepo.log({
+    instanceId: ctx.instance?.id ?? null,
+    groupId: ctx.group.groupId,
+    actorJid: ctx.author.jid,
+    action: 'mod.promote',
+    targetJid: prepared.jid,
+    detail: {},
+  });
+  return ok('mod.promote', {
+    userName: prepared.targetName,
+    adminName: ctx.author.name,
+    mentions: [prepared.jid],
+    command: 'promote',
+  }, { actions: [action.refreshAdmins()] });
+}
+
+/** `.demote <@usuario>` — le quita el admin en WhatsApp. */
+export async function demote(ctx, arg = null) {
+  const resolved = resolveTarget(ctx, { arg, allowQuoted: true });
+  if (!resolved.ok) return fail('mod.denied', { reason: resolved.reason, command: 'demote' });
+  const jid = validateUserJid(resolved.value);
+  if (!jid.ok) return fail('mod.denied', { reason: jid.reason, command: 'demote' });
+
+  const botAdmin = requireBotAdmin(ctx, 'quitar administradores');
+  if (!botAdmin.ok) return fail('mod.denied', { reason: botAdmin.reason, need: botAdmin.need, command: 'demote' });
+
+  const targetIsAdmin = groupsRepo.isAdmin(ctx.group.groupId, jid.value);
+  if (!targetIsAdmin) {
+    return fail('sys.invalid', {
+      command: 'demote',
+      message: `${targetName(ctx, jid.value)} no es administrador del grupo.`,
+    });
+  }
+  // No degradar al owner del bot ni al creador del grupo.
+  const admins = groupsRepo.listAdmins(ctx.group.groupId);
+  const entry = admins.find((a) => a.user_jid === jid.value);
+  if (entry?.is_super) {
+    return fail('mod.denied', { reason: 'No puedes degradar al creador del grupo.', command: 'demote' });
+  }
+  if (isBotOwner(jid.value)) {
+    return fail('mod.denied', { reason: 'El owner del bot está fuera de tu alcance.', command: 'demote' });
+  }
+
+  await ctx.client.groupParticipantsUpdate(ctx.group.groupId, [jid.value], 'demote').catch(() => null);
+  auditRepo.log({
+    instanceId: ctx.instance?.id ?? null,
+    groupId: ctx.group.groupId,
+    actorJid: ctx.author.jid,
+    action: 'mod.demote',
+    targetJid: jid.value,
+    detail: {},
+  });
+  return ok('mod.demote', {
+    userName: targetName(ctx, jid.value),
+    adminName: ctx.author.name,
+    mentions: [jid.value],
+    command: 'demote',
+  }, { actions: [action.refreshAdmins()] });
+}
+
+/** Participantes reales del grupo desde WhatsApp (ids normalizados). */
+export async function groupParticipantJids(ctx) {
+  const metadata = await ctx.client.groupMetadata(ctx.group.groupId).catch(() => null);
+  const raw = metadata?.participants ?? [];
+  const jids = [];
+  for (const entry of raw) {
+    const id = typeof entry === 'string' ? entry : entry?.id ?? entry?.jid;
+    if (!id) continue;
+    const normalized = String(id).toLowerCase().replace(/:\d+@/, '@');
+    if (normalized && !jids.includes(normalized)) jids.push(normalized);
+  }
+  // Sin el bot: no tiene sentido mencionarse a sí mismo.
+  const botJid = ctx.bot?.jid ? String(ctx.bot.jid).toLowerCase() : null;
+  return jids.filter((jid) => jid !== botJid);
+}
+
+/** `.tagall [mensaje]` — menciona a todos los participantes. */
+export async function tagAll(ctx, rawText = null) {
+  const text = String(rawText ?? '').trim() || 'Sin mensaje';
+  const jids = await groupParticipantJids(ctx);
+  if (!jids.length) {
+    return fail('sys.error', { command: 'tagall', message: 'No pude leer la lista de participantes del grupo.' });
+  }
+  const shown = jids.slice(0, 60).map((jid) => ({ jid, mention: mentionOf(jid), name: targetName(ctx, jid) }));
+  auditRepo.log({
+    instanceId: ctx.instance?.id ?? null,
+    groupId: ctx.group.groupId,
+    actorJid: ctx.author.jid,
+    action: 'mod.tagall',
+    detail: { total: jids.length, length: text.length },
+  });
+  return ok('mod.tagall', {
+    authorName: ctx.author.name,
+    text: text.slice(0, 500),
+    total: jids.length,
+    shown,
+    hidden: Math.max(0, jids.length - shown.length),
+    groupName: ctx.group.name,
+    mentions: jids,
+    command: 'tagall',
+  });
+}
+
+/** `.notify <mensaje>` — aviso con mención oculta a todos. */
+export async function notifyAll(ctx, rawText = null) {
+  const text = String(rawText ?? '').trim();
+  if (!text) {
+    return fail('sys.invalid', {
+      command: 'notify',
+      message: 'Escribe el mensaje de la notificación.',
+      hint: `Ejemplo: ${ctx.prefix ?? '.'}notify Hoy hay evento a las 21:00`,
+    });
+  }
+  const jids = await groupParticipantJids(ctx);
+  if (!jids.length) {
+    return fail('sys.error', { command: 'notify', message: 'No pude leer la lista de participantes del grupo.' });
+  }
+  auditRepo.log({
+    instanceId: ctx.instance?.id ?? null,
+    groupId: ctx.group.groupId,
+    actorJid: ctx.author.jid,
+    action: 'mod.notify',
+    detail: { total: jids.length, length: text.length },
+  });
+  return ok('mod.notify', {
+    authorName: ctx.author.name,
+    text: text.slice(0, 1000),
+    total: jids.length,
+    groupName: ctx.group.name,
+    mentions: jids,
+    command: 'notify',
+  });
+}
+
+/** `.revoke` — revoca el enlace de invitación y genera uno nuevo. */
+export async function revokeLink(ctx) {
+  const botAdmin = requireBotAdmin(ctx, 'revocar el enlace de invitación');
+  if (!botAdmin.ok) return fail('mod.denied', { reason: botAdmin.reason, need: botAdmin.need, command: 'revoke' });
+  if (typeof ctx.client?.groupRevokeInvite !== 'function') {
+    return fail('sys.error', {
+      command: 'revoke',
+      message: 'Este cliente de WhatsApp no soporta revocar enlaces.',
+    });
+  }
+  const code = await ctx.client.groupRevokeInvite(ctx.group.groupId).catch(() => null);
+  if (!code) {
+    return fail('sys.error', { command: 'revoke', message: 'WhatsApp no devolvió el enlace nuevo.' });
+  }
+  auditRepo.log({
+    instanceId: ctx.instance?.id ?? null,
+    groupId: ctx.group.groupId,
+    actorJid: ctx.author.jid,
+    action: 'mod.revoke',
+    detail: {},
+  });
+  return ok('mod.revoke', {
+    link: `https://chat.whatsapp.com/${code}`,
+    groupName: ctx.group.name,
+    adminName: ctx.author.name,
+    command: 'revoke',
+  });
+}
+
+/* ── muteos ─────────────────────────────────────────────────── */
+
+export function mute(ctx, arg = null, reasonRaw = null) {
+  const prepared = prepareModeration(ctx, { arg, command: 'mute', needBotAdmin: false });
+  if (prepared.error) return prepared.error;
+  const reason = String(reasonRaw ?? '').trim().slice(0, 160) || null;
+  mutedRepo.mute(ctx.group.groupId, prepared.jid, { reason: reason ?? '', mutedBy: ctx.author.jid });
+  auditRepo.log({
+    instanceId: ctx.instance?.id ?? null,
+    groupId: ctx.group.groupId,
+    actorJid: ctx.author.jid,
+    action: 'mod.mute',
+    targetJid: prepared.jid,
+    detail: { reason },
+  });
+  return ok('mod.mute', {
+    userName: prepared.targetName,
+    reason,
+    adminName: ctx.author.name,
+    mentions: [prepared.jid],
+    command: 'mute',
+  });
+}
+
+export function unmute(ctx, arg = null) {
+  const resolved = resolveTarget(ctx, { arg, allowQuoted: true });
+  if (!resolved.ok) return fail('mod.denied', { reason: resolved.reason, command: 'unmute' });
+  const jid = validateUserJid(resolved.value);
+  if (!jid.ok) return fail('mod.denied', { reason: jid.reason, command: 'unmute' });
+  const changed = mutedRepo.unmute(ctx.group.groupId, jid.value);
+  if (!changed) {
+    return fail('sys.invalid', {
+      command: 'unmute',
+      message: `${targetName(ctx, jid.value)} no estaba silenciado.`,
+    });
+  }
+  auditRepo.log({
+    instanceId: ctx.instance?.id ?? null,
+    groupId: ctx.group.groupId,
+    actorJid: ctx.author.jid,
+    action: 'mod.unmute',
+    targetJid: jid.value,
+    detail: {},
+  });
+  return ok('mod.unmute', {
+    userName: targetName(ctx, jid.value),
+    adminName: ctx.author.name,
+    mentions: [jid.value],
+    command: 'unmute',
+  });
+}
+
+export function muteList(ctx) {
+  const entries = mutedRepo.list(ctx.group.groupId).map((m) => ({
+    jid: m.user_jid,
+    name: targetName(ctx, m.user_jid),
+    reason: m.reason || null,
+    mutedAt: m.muted_at,
+  }));
+  return ok('mod.mutelist', {
+    entries,
+    total: entries.length,
+    groupName: ctx.group.name,
+    command: 'mutelist',
+  });
+}
+
+/* ── toggles y textos ───────────────────────────────────────── */
+
+function toggleFeature(ctx, { command, label, get, set, hint }) {
+  const raw = ctx.args ?? '';
+  const wanted = parseToggle(raw.split(/\s+/)[0] ?? '');
+  if (wanted === null) {
+    const enabled = Boolean(get());
+    return ok('mod.toggle', {
+      feature: label,
+      enabled,
+      statusOnly: true,
+      command,
+      hint: hint ?? `Usa ${ctx.prefix ?? '.'}${command} on / off`,
+    });
+  }
+  set(wanted);
+  auditRepo.log({
+    instanceId: ctx.instance?.id ?? null,
+    groupId: ctx.group.groupId,
+    actorJid: ctx.author.jid,
+    action: 'group.config',
+    detail: { key: command, value: wanted },
+  });
+  return ok('mod.toggle', {
+    feature: label,
+    enabled: wanted,
+    statusOnly: false,
+    adminName: ctx.author.name,
+    command,
+  });
+}
+
+export function welcomeToggle(ctx) {
+  return toggleFeature(ctx, {
+    command: 'welcome',
+    label: 'bienvenida automática',
+    get: () => ctx.group.config.welcome,
+    set: (value) => {
+      groupsRepo.setFlag(ctx.group.groupId, 'welcome', value);
+      groupsRepo.updateConfig(ctx.group.groupId, { welcome: value });
+      ctx.group.config.welcome = value;
+    },
+  });
+}
+
+export function byeToggle(ctx) {
+  return toggleFeature(ctx, {
+    command: 'bye',
+    label: 'despedida automática',
+    get: () => ctx.group.config.farewell,
+    set: (value) => {
+      groupsRepo.setFlag(ctx.group.groupId, 'farewell', value);
+      groupsRepo.updateConfig(ctx.group.groupId, { farewell: value });
+      ctx.group.config.farewell = value;
+    },
+  });
+}
+
+export function onlyAdminToggle(ctx) {
+  return toggleFeature(ctx, {
+    command: 'onlyadmin',
+    label: 'modo solo administradores',
+    get: () => ctx.group.config.adminonly,
+    set: (value) => {
+      groupsRepo.updateConfig(ctx.group.groupId, { adminonly: value });
+      ctx.group.config.adminonly = value;
+    },
+    hint: `Con el modo activo, solo los admins usan los comandos. Usa ${ctx.prefix ?? '.'}onlyadmin off para abrirlo.`,
+  });
+}
+
+export function alertsToggle(ctx) {
+  return toggleFeature(ctx, {
+    command: 'alertas',
+    label: 'alertas y avisos del grupo',
+    get: () => ctx.group.config.alerts !== false,
+    set: (value) => {
+      groupsRepo.updateConfig(ctx.group.groupId, { alerts: value });
+      ctx.group.config.alerts = value;
+    },
+  });
+}
+
+export function antilinkToggle(ctx) {
+  return toggleFeature(ctx, {
+    command: 'antilink',
+    label: 'protección antienlaces',
+    get: () => ctx.group.config.antilink === true,
+    set: (value) => {
+      groupsRepo.updateConfig(ctx.group.groupId, { antilink: value });
+      ctx.group.config.antilink = value;
+    },
+    hint: `Con el antilink activo se borran los enlaces de no-admins. Usa ${ctx.prefix ?? '.'}antilink off para quitarlo.`,
+  });
+}
+
+export function setWelcomeText(ctx, raw = null) {
+  const text = String(raw ?? '').trim().slice(0, 400);
+  if (!text) {
+    const current = String(ctx.group.config.welcome_text ?? '').trim();
+    return ok('mod.settext', {
+      feature: 'mensaje de bienvenida',
+      text: current || null,
+      statusOnly: true,
+      command: 'setwelcome',
+      hint: `Ejemplo: ${ctx.prefix ?? '.'}setwelcome ¡Bienvenido al team, {user}! Lee las reglas con {prefix}reglas`,
+    });
+  }
+  groupsRepo.updateConfig(ctx.group.groupId, { welcome_text: text });
+  ctx.group.config.welcome_text = text;
+  auditRepo.log({
+    instanceId: ctx.instance?.id ?? null,
+    groupId: ctx.group.groupId,
+    actorJid: ctx.author.jid,
+    action: 'group.config',
+    detail: { key: 'welcome_text', length: text.length },
+  });
+  return ok('mod.settext', {
+    feature: 'mensaje de bienvenida',
+    text,
+    statusOnly: false,
+    adminName: ctx.author.name,
+    command: 'setwelcome',
+  });
+}
+
+export function setByeText(ctx, raw = null) {
+  const text = String(raw ?? '').trim().slice(0, 400);
+  if (!text) {
+    const current = String(ctx.group.config.bye_text ?? '').trim();
+    return ok('mod.settext', {
+      feature: 'mensaje de despedida',
+      text: current || null,
+      statusOnly: true,
+      command: 'setbye',
+      hint: `Ejemplo: ${ctx.prefix ?? '.'}setbye {user} dejó el team. ¡Suerte!`,
+    });
+  }
+  groupsRepo.updateConfig(ctx.group.groupId, { bye_text: text });
+  ctx.group.config.bye_text = text;
+  auditRepo.log({
+    instanceId: ctx.instance?.id ?? null,
+    groupId: ctx.group.groupId,
+    actorJid: ctx.author.jid,
+    action: 'group.config',
+    detail: { key: 'bye_text', length: text.length },
+  });
+  return ok('mod.settext', {
+    feature: 'mensaje de despedida',
+    text,
+    statusOnly: false,
+    adminName: ctx.author.name,
+    command: 'setbye',
+  });
+}
+
+/** `.testwelcome` — vista previa con tus propios datos. */
+export function testWelcome(ctx) {
+  return ok('group.welcome', {
+    name: ctx.author.name,
+    groupName: ctx.group.name,
+    total: ctx.group.size || 0,
+    mention: mentionOf(ctx.author.jid),
+    registered: Boolean(ctx.author.user),
+    customText: String(ctx.group.config.welcome_text ?? '').trim() || null,
+    preview: true,
+    mentions: [ctx.author.jid],
+    command: 'testwelcome',
+  });
+}
+
+/** `.testbye` — vista previa con tus propios datos. */
+export function testBye(ctx) {
+  return ok('group.farewell', {
+    name: ctx.author.name,
+    groupName: ctx.group.name,
+    role: ctx.author.user?.role_name ?? null,
+    total: Math.max(0, (ctx.group.size || 1) - 1),
+    reason: 'leave',
+    customText: String(ctx.group.config.bye_text ?? '').trim() || null,
+    preview: true,
+    command: 'testbye',
+  });
+}
+
+/** Aplica variables {user} {group} {prefix} a un texto custom. */
+export function renderCustomText(template, { user, group, prefix } = {}) {
+  return String(template ?? '')
+    .replace(/\{user\}/gi, String(user ?? ''))
+    .replace(/\{group\}/gi, String(group ?? ''))
+    .replace(/\{prefix\}/gi, String(prefix ?? '.'))
+    .trim();
+}

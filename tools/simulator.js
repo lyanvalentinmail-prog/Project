@@ -88,6 +88,20 @@ class FakeClient {
     return 'SIMULADO_NO_REAL';
   }
 
+  async groupRevokeInvite() {
+    return 'SIMULADO_RENOVADO';
+  }
+
+  async profilePictureUrl(jid) {
+    return `https://simulado.local/pfp/${encodeURIComponent(String(jid).split('@')[0])}.jpg`;
+  }
+
+  async deleteMessage(jid, key) {
+    this.deleted = this.deleted ?? [];
+    this.deleted.push({ jid, key });
+    return {};
+  }
+
   async groupFetchAllParticipating() {
     return { [DEMO_GROUP]: this.metadata };
   }

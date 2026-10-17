@@ -1,9 +1,10 @@
 /**
  * VÉRSOVA · estilos de menú
- * Seis estilos renderizables. Cada función recibe:
+ * Estilos renderizables. Cada función recibe:
  * { status, prefix, name, team, version, categories: [{ meta, commands }] }
  * donde meta = { id, title, icon, sub, kaomoji, index }
  * y commands = [{ name, aliases, description, args, response? }]
+ * El estilo `raiden` además lee { userName, filter }.
  */
 
 import { SYM, RULE, KAOMOJI, fancyNumber } from './theme.js';
@@ -181,6 +182,64 @@ export function renderRetro({ status, prefix, name, team, version, categories })
   return out.join('\n');
 }
 
+/* ── estilo Raiden (portado de Raiden-WaBot) ──────────────────── */
+
+const RAIDEN_ORDER = ['info', 'registro', 'roles', 'team', 'social', 'download', 'perfil', 'admin', 'stickers', 'tools', 'economy', 'anime', 'logos'];
+const RAIDEN_INDEX = new Map(RAIDEN_ORDER.map((id, i) => [id, i]));
+const RAIDEN_EMOJI = {
+  info: '☁️',
+  registro: '📋',
+  roles: '🎭',
+  team: '👥',
+  social: '🥢',
+  download: '🛍️',
+  perfil: '🌸',
+  admin: '🦋',
+  stickers: '⭐',
+  tools: '💐',
+  economy: '🪷',
+  anime: '🧈',
+  logos: '🍰',
+};
+const RAIDEN_READMORE = String.fromCharCode(8206).repeat(4000);
+
+export function renderRaiden({ prefix, name, team, version, categories, userName = null, filter = null }) {
+  const p = prefix || '.';
+  const list = Array.isArray(categories) ? categories : [];
+  const total = list.reduce((sum, cat) => sum + (cat?.commands?.length ?? 0), 0);
+  const wanted = String(filter ?? '').toLowerCase().trim();
+
+  const ordered = [...list].sort((a, b) => {
+    const ia = RAIDEN_INDEX.has(a?.meta?.id) ? RAIDEN_INDEX.get(a.meta.id) : 999;
+    const ib = RAIDEN_INDEX.has(b?.meta?.id) ? RAIDEN_INDEX.get(b.meta.id) : 999;
+    if (ia !== ib) return ia - ib;
+    return String(a?.meta?.id ?? '').localeCompare(String(b?.meta?.id ?? ''));
+  });
+  const shown = wanted ? ordered.filter((cat) => String(cat?.meta?.id ?? '').toLowerCase() === wanted) : ordered;
+  if (wanted && !shown.length) {
+    return `《✤》 La categoría *${wanted}* no fue encontrada.`;
+  }
+
+  let menu = `︶⊹︶︶୨୧︶︶⊹︶︶⊹︶︶୨୧︶︶⊹\n「 ꕤ 」 ¡Hola! *${userName || 'Usuario'}*, Soy *${name}*, Aquí tienes la lista de comandos.\n> Para Ver Tu Perfil Usa *${p}perfil* 𝜗ৎ\n\n‿    ׅ   𝆬     ε❤︎︭з   𝆬     ׅ      ‿\n\nׅ  ׄ  ✿ *Modo* » Rol\nׅ  ׄ  ✿ *Desarrollador* » ${team}\nׅ  ׄ  ✿ *Moneda* » ¥enes\nׅ  ׄ  ✿ *Comandos* » ${total}\nׅ  ׄ  ✿ *Prefijo* » ${p} · v${version}\n\n‿    ׅ   𝆬     ε❤︎︭з   𝆬     ׅ      ‿\n${RAIDEN_READMORE}\n\n⋆｡ﾟ☁︎ ｡° *ᴄᴏᴍ꯭ᴀ꯭ɴᴅᴏs* ﾟ｡˚₊ 𓂃\n`;
+
+  for (const cat of shown) {
+    const id = String(cat?.meta?.id ?? 'otros');
+    const title = String(cat?.meta?.title ?? id).toUpperCase();
+    const emoji = RAIDEN_EMOJI[id] ?? cat?.meta?.icon ?? '✦';
+    menu += `\n☕︎  𝀢  塞缪尔ᅟ֪   ﹙ *\`${title}\`* ﹚ᅟ ㅤ✿\n\n`;
+    for (const cmd of cat?.commands ?? []) {
+      const names = [cmd.name, ...(cmd.aliases ?? [])].filter(Boolean).slice(0, 2);
+      const astr = names.map((a) => `*${p}${a}*`).join(' › ');
+      const utxt = cmd.args ? ` + _${cmd.args}_` : '';
+      menu += `❀   ᠀᠀ㅤ۟ ${emoji}  ${astr}${utxt}\n> ── 𑁪ㅤׅㅤ۫  ${cmd.description || 'Sin descripción'}\n`;
+    }
+    menu += `\n ㅤׅㅤ۫ㅤㅤ      ﹙❀﹚ㅤׅㅤㅤ˚ㅤ\n`;
+  }
+
+  menu += `\n> ׅ  ׄ  ✿  Made with love by *${team}*`;
+  return menu;
+}
+
 export const STYLES = {
   versova: { id: 'versova', label: 'Versova (Oficial)', description: 'El diseño clásico de VÉRSOVA, con kaomojis y bloques decorados.', render: renderVersova, preview: 'Elaborado · con encabezado, 5 bloques y footer' },
   minimal: { id: 'minimal', label: 'Minimal', description: 'Limpio y directo: lista plana con viñetas.', render: renderMinimal, preview: 'Limpio · lista por categorías' },
@@ -188,6 +247,7 @@ export const STYLES = {
   cyber: { id: 'cyber', label: 'Cyber', description: 'Bloques y flechas neón, estilo terminal hack.', render: renderCyber, preview: 'Terminal · neón · ▓▓▓' },
   compact: { id: 'compact', label: 'Compact', description: 'Una línea por categoría: máximo ahorro.', render: renderCompact, preview: 'Ultra corto · una línea' },
   retro: { id: 'retro', label: 'Retro', description: 'ASCII box art nostálgico, tipo BBS 90s.', render: renderRetro, preview: 'ASCII art · retro box' },
+  raiden: { id: 'raiden', label: 'Raiden', description: 'El menú de Raiden-WaBot: saludo, bloques por categoría y Made with love.', render: renderRaiden, preview: 'Saludo · ☕︎ bloques · ﹙❀﹚' },
 };
 
 export function renderByStyle(styleId, data) {

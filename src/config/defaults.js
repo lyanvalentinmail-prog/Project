@@ -19,6 +19,12 @@ export function defaultGroupConfig() {
     commands_in_private: env.privateCommands,
     only_registered_roles: true,
     couple_enabled: true,
+    // ── paquete Raiden ──
+    adminonly: false,
+    antilink: false,
+    alerts: true,
+    welcome_text: '',
+    bye_text: '',
     rules: DEFAULT_RULES,
   };
 }
@@ -33,6 +39,9 @@ export const CONFIG_KEYS = Object.freeze({
   despedida: { field: 'farewell', type: 'bool', label: 'despedida automática' },
   afk: { field: 'afk_mentions', type: 'bool', label: 'aviso de menciones AFK' },
   parejas: { field: 'couple_enabled', type: 'bool', label: 'sistema de parejas' },
+  soloadmin: { field: 'adminonly', type: 'bool', label: 'modo solo administradores' },
+  antilink: { field: 'antilink', type: 'bool', label: 'protección antienlaces' },
+  alertas: { field: 'alerts', type: 'bool', label: 'alertas y avisos del grupo' },
 });
 
 export const DEFAULT_RULES = `☕ REGLAS DEL TEAM ◢禍◣ Versova

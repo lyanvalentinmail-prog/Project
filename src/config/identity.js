@@ -22,10 +22,14 @@ export const IDENTITY = Object.freeze({
 /** Alias de comando: permite varias formas de escribir lo mismo. */
 export const ALIASES = Object.freeze({
   menu: ['ayuda', 'comandos', 'start', 'menucompleto'],
+  ping: ['p'],
+  botinfo: ['infobot'],
+  owner: ['creador', 'dev'],
   reg: ['registrar', 'registrarme'],
   unreg: ['delreg', 'borrar'],
   editar: ['edit'],
   ficha: ['miperfil', 'info'],
+  perfil: ['profile'],
   rol: ['role', 'pedirrol'],
   roles: ['rolesocupados', 'listarol'],
   mirol: ['myrol'],
@@ -36,7 +40,6 @@ export const ALIASES = Object.freeze({
   miembros: ['members', 'lista'],
   afk: ['ausente'],
   inactivos: ['inactivo', 'ausencias'],
-  perfil: ['profile'],
   pareja: ['parejacon', 'proponer'],
   ship: ['shipeo', 'compatibilidad'],
   reglas: ['rules', 'normas'],

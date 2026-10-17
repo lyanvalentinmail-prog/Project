@@ -599,6 +599,33 @@ export class BotClient extends EventEmitter {
     return this.sock.groupInviteCode(normalizeJid(jid));
   }
 
+  /** Revoca el enlace de invitación y devuelve el código nuevo. */
+  async groupRevokeInvite(jid) {
+    this._metadataCache.delete(normalizeJid(jid));
+    return this.sock.groupRevokeInvite(normalizeJid(jid));
+  }
+
+  /** Foto de perfil de un contacto (null si es privada o no existe). */
+  async profilePictureUrl(jid) {
+    try {
+      return await this.sock.profilePictureUrl(normalizeJid(jid), 'image');
+    } catch {
+      return null;
+    }
+  }
+
+  /** Borra un mensaje del chat (requiere ser admin en grupos). */
+  async deleteMessage(jid, key) {
+    if (!key?.id) return null;
+    return this.sendMessage(normalizeJid(jid), {
+      delete: {
+        id: key.id,
+        remoteJid: normalizeJid(key.remoteJid ?? jid),
+        fromMe: Boolean(key.fromMe),
+      },
+    });
+  }
+
   async groupFetchAllParticipating() {
     const all = await this.sock.groupFetchAllParticipating();
     for (const metadata of Object.values(all ?? {})) this.learnParticipants(metadata?.participants);

@@ -1302,6 +1302,7 @@ async function openEditInstance(instance) {
       { id: 'cyber', label: 'Cyber', description: 'Bloques y flechas neón, estilo terminal hack.', preview: 'Terminal · neón · ▓▓▓' },
       { id: 'compact', label: 'Compact', description: 'Una línea por categoría: máximo ahorro.', preview: 'Ultra corto · una línea' },
       { id: 'retro', label: 'Retro', description: 'ASCII box art nostálgico, tipo BBS 90s.', preview: 'ASCII art · retro box' },
+      { id: 'raiden', label: 'Raiden', description: 'El menú de Raiden-WaBot: saludo, bloques por categoría y Made with love.', preview: 'Saludo · ☕︎ bloques · ﹙❀﹚' },
     ];
   // Render inicial síncrono (sin preview aún) - contiene el textarea esperado por tests
   const adminNumImmediate = (instance.adminNumbers || []).join('\n');
@@ -1333,6 +1334,7 @@ async function openEditInstance(instance) {
       { id: 'cyber', label: 'Cyber', description: 'Neón', preview: 'Cyber' },
       { id: 'compact', label: 'Compact', description: 'Corto', preview: 'Compacto' },
       { id: 'retro', label: 'Retro', description: 'ASCII', preview: 'Retro' },
+      { id: 'raiden', label: 'Raiden', description: 'Raiden', preview: 'Raiden' },
     ];
     renderEditModal();
     // preview se carga bajo demanda al abrir pestaña Estilo
@@ -1417,8 +1419,15 @@ function renderEditModal() {
       { id: 'team', title: 'GESTIÓN', icon: '𖤐', sub: 'team management', built: true },
       { id: 'social', title: 'INTERACCIÓN', icon: '🥢', sub: 'social & fun', built: true },
       { id: 'admin', title: 'ADMINISTRACIÓN', icon: '⛓️', sub: 'staff only', built: true },
+      { id: 'anime', title: 'ANIME', icon: '🧈', sub: 'anime reactions', built: true },
+      { id: 'economy', title: 'ECONOMÍA', icon: '🪷', sub: 'yenes & gamble', built: true },
+      { id: 'download', title: 'DESCARGAS', icon: '🛍️', sub: 'music & media', built: true },
+      { id: 'perfil', title: 'PERFIL', icon: '🌸', sub: 'love & datos', built: true },
+      { id: 'stickers', title: 'STICKERS', icon: '⭐', sub: 'sticker maker', built: true },
+      { id: 'tools', title: 'HERRAMIENTAS', icon: '💐', sub: 'ia & utilidad', built: true },
+      { id: 'logos', title: 'LOGOS', icon: '🍰', sub: 'logo maker', built: true },
     ];
-    let html = `<div class="edit-card"><h4>${icon('hash')} Categorías del sistema <span class="badge">6 fijas</span></h4><p style="margin:6px 0 0;color:var(--text-muted);font-size:11px;">Estas categorías no se pueden borrar, pero puedes mover comandos entre ellas y crear las tuyas.</p></div>`;
+    let html = `<div class="edit-card"><h4>${icon('hash')} Categorías del sistema <span class="badge">13 fijas</span></h4><p style="margin:6px 0 0;color:var(--text-muted);font-size:11px;">Estas categorías no se pueden borrar, pero puedes mover comandos entre ellas y crear las tuyas.</p></div>`;
     html += `<div class="category-grid">${builtins.map((b) => `<div class="category-card"><div class="category-card-head"><span class="cat-icon">${escapeHtml(b.icon)}</span><div><h5>${escapeHtml(b.title)}</h5><p>${escapeHtml(b.sub)} · ${escapeHtml(b.id)}</p></div></div><span style="font-size:10px;color:var(--text-muted);">Fija del sistema</span></div>`).join('')}</div>`;
     if (draft.categories.length) {
       html += `<div class="edit-card"><h4>${icon('spark')} Tus categorías <span class="badge">${draft.categories.length}</span></h4><p style="margin:6px 0 10px;color:var(--text-muted);font-size:11px;">Aparecerán en el menú en el orden que las crees. Puedes asignarles comandos.</p><div class="category-grid">${draft.categories.map((cat) => `<div class="category-card is-custom"><div class="category-card-head"><span class="cat-icon">${escapeHtml(cat.icon)}</span><div style="flex:1;min-width:0;"><h5>${escapeHtml(cat.title)}</h5><p>${escapeHtml(cat.sub)} · id: ${escapeHtml(cat.id)}</p><small style="color:var(--text-muted);">${escapeHtml(cat.kaomoji)}</small></div><button class="icon-button" type="button" data-action="delete-category" data-id="${escapeHtml(cat.id)}" aria-label="Eliminar">${icon('close')}</button></div><div class="category-actions"><span class="alias-chip" style="font-size:10px;">${escapeHtml(cat.id)}</span></div></div>`).join('')}</div></div>`;
@@ -1442,7 +1451,7 @@ function renderEditModal() {
     return html;
   })();
   const nuevoHtml = (() => {
-    const allCats = ['info','registro','roles','team','social','admin', ...draft.categories.map((c)=>c.id)];
+    const allCats = ['info','registro','roles','team','social','admin','anime','economy','download','perfil','stickers','tools','logos', ...draft.categories.map((c)=>c.id)];
     let html = `<div class="edit-card"><h4>${icon('plus')} Crear comando personalizado</h4><p style="margin:6px 0;color:var(--text-muted);font-size:11px;">Crea un comando nuevo que responde con tu texto. Usa variables <code>{{user}}</code>, <code>{{botName}}</code>, <code>{{prefix}}</code>, <code>{{groupName}}</code>.</p>
     <form id="new-command-form" class="custom-cmd-form">
       <div class="field-grid">

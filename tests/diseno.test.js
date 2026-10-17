@@ -140,7 +140,7 @@ test('el menú reproduce el diseño oficial del team', () => {
 
 test('la ayuda por sección y por comando se genera desde el registro', () => {
   const sections = availableSections({ commands: registry.list });
-  for (const category of ['registro', 'roles', 'team', 'social', 'admin', 'info']) {
+  for (const category of ['registro', 'roles', 'team', 'social', 'admin', 'info', 'anime', 'economy', 'download', 'perfil', 'stickers', 'tools', 'logos']) {
     assert.ok(sections.includes(category), `falta la sección ${category}`);
   }
 

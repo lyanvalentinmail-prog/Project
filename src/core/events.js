@@ -6,7 +6,7 @@
  * · sale alguien       → sincronizar registro (libera rol, pareja, reservas)
  * · promote/demote     → refrescar el espejo de administradores
  */
-import { groupsRepo, usersRepo, auditRepo } from '../db/index.js';
+import { groupsRepo, usersRepo, auditRepo, mutedRepo } from '../db/index.js';
 import { ensureGroup, invalidateGroupCache, clearGroupCache } from './group-sync.js';
 import { normalizeJid, sameUser } from '../utils/ids.js';
 import { participantJid, adminsFromMetadata } from '../utils/lid.js';
@@ -85,8 +85,34 @@ async function send(ctx, to, payload, options = {}) {
    Mensajes normales (no comando)
    ═══════════════════════════════════════════════════════════════ */
 
+/** Enlaces que el .antilink borra cuando los envía un no-admin. */
+const ANTILINK_RE = /(https?:\/\/|www\.|chat\.whatsapp\.com|wa\.me\/|t\.me\/|discord\.gg|instagram\.com|tiktok\.com)/i;
+
 export async function onMessage(ctx) {
   if (!ctx.isGroup) return;
+
+  // 0) moderación automática (paquete Raiden): muteos y antienlaces.
+  // El staff está exento y sin bot-admin no se puede borrar nada.
+  if (ctx.messageId && !ctx.author.isAdmin && ctx.group?.botIsAdmin) {
+    try {
+      const groupId = ctx.group.groupId;
+      if (mutedRepo.isMuted(groupId, ctx.author.jid)) {
+        await ctx.client.deleteMessage?.(ctx.chatJid, ctx.raw?.key).catch(() => null);
+        return;
+      }
+      if (ctx.group.config?.antilink && ANTILINK_RE.test(ctx.text ?? '')) {
+        await ctx.client.deleteMessage?.(ctx.chatJid, ctx.raw?.key).catch(() => null);
+        auditRepo.log({
+          instanceId: ctx.instance?.id ?? null,
+          groupId,
+          actorJid: ctx.author.jid,
+          action: 'mod.antilink',
+          detail: { length: (ctx.text ?? '').length },
+        });
+        return;
+      }
+    } catch {}
+  }
 
   // 1) última actividad (con throttle)
   teamService.touchActivity(ctx);
@@ -171,17 +197,23 @@ export async function onParticipantsUpdate({ client, instance, event }) {
         if (!ctx.group.config.welcome) break;
 
         const participantsCount = ctx.group.size || 0;
+        const joinedName = returned?.name ?? client.contactName?.(jid) ?? 'Nuevo integrante';
         await send(
           ctx,
           'group',
           {
             view: 'group.welcome',
             data: {
-              name: returned?.name ?? client.contactName?.(jid) ?? 'Nuevo integrante',
+              name: joinedName,
               groupName: ctx.group.name,
               total: participantsCount,
               mention: `@${jid.split('@')[0]}`,
               registered: Boolean(returned?.restored),
+              customText: moderation.renderCustomText(ctx.group.config?.welcome_text, {
+                user: joinedName,
+                group: ctx.group.name,
+                prefix: ctx.instance?.prefix ?? ctx.group.config?.prefix ?? '.',
+              }) || null,
             },
           },
           { mentions: [jid] }
@@ -194,14 +226,20 @@ export async function onParticipantsUpdate({ client, instance, event }) {
         const left = registration.syncMemberLeft(ctx, jid, actorJid && !samePerson ? 'kick' : 'leave');
         if (!ctx.group.config.farewell) break;
         const remaining = usersRepo.counts(groupJid).active;
+        const leftName = left?.name ?? 'Un integrante';
         await send(ctx, 'group', {
           view: 'group.farewell',
           data: {
-            name: left?.name ?? 'Un integrante',
+            name: leftName,
             groupName: ctx.group.name,
             role: left?.role ?? null,
             total: remaining,
             reason: left ? 'leave' : 'leave',
+            customText: moderation.renderCustomText(ctx.group.config?.bye_text, {
+              user: leftName,
+              group: ctx.group.name,
+              prefix: ctx.instance?.prefix ?? ctx.group.config?.prefix ?? '.',
+            }) || null,
           },
         });
         break;

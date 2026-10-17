@@ -15,13 +15,13 @@ const P = { toString: () => currentPrefix() };
 import { buildMenuData } from '../services/menu.service.js';
 import { renderByStyle } from './menu-styles.js';
 
-export function mainMenu({ status = 'ᴏɴʟɪɴᴇ', prefix = P, name = IDENTITY.name, team = IDENTITY.team, version = IDENTITY.version, instance = null, style = null } = {}) {
+export function mainMenu({ status = 'ᴏɴʟɪɴᴇ', prefix = P, name = IDENTITY.name, team = IDENTITY.team, version = IDENTITY.version, instance = null, style = null, userName = null, filter = null } = {}) {
   // Si hay instancia, usa su custom_config
   try {
     if (instance) {
       const data = buildMenuData(instance, String(prefix));
       const chosen = style || data.style || 'versova';
-      return renderByStyle(chosen, { ...data, status, prefix: String(prefix), name, team, version });
+      return renderByStyle(chosen, { ...data, status, prefix: String(prefix), name, team, version, userName, filter });
     }
   } catch {}
   // Fallback 100% idéntico al diseño original para tests y sin instancia
@@ -175,6 +175,13 @@ const SECTION_META = {
   team: { title: 'GESTIÓN', icon: '𖤐', sub: '𝗍𝖾𝖺𝗆 𝗆𝖺𝗇𝖺𝗀𝖾𝗆𝖾𝗇𝗍', kaomoji: KAOMOJI.cheer, index: 4 },
   social: { title: 'INTERACCIÓN', icon: '🥢', sub: '𝗌𝗈𝖼𝗂𝖺𝗅 & 𝖿𝗎𝗇', kaomoji: KAOMOJI.hug, index: 5 },
   admin: { title: 'ADMINISTRACIÓN', icon: '⛓️', sub: '𝗌𝗍𝖺𝖿𝖿 𝗈𝗇𝗅𝗒', kaomoji: KAOMOJI.serious, index: 6 },
+  anime: { title: 'ANIME', icon: '🧈', sub: '𝖺𝗇𝗂𝗆𝖾 𝗋𝖾𝖺𝖼𝗍𝗂𝗈𝗇𝗌', kaomoji: KAOMOJI.hug, index: 7 },
+  economy: { title: 'ECONOMÍA', icon: '🪷', sub: '𝗒𝖾𝗇𝖾𝗌 & 𝗀𝖺𝗆𝖻𝗅𝖾', kaomoji: KAOMOJI.smug, index: 8 },
+  download: { title: 'DESCARGAS', icon: '🛍️', sub: '𝗆𝗎𝗌𝗂𝖼 & 𝗆𝖾𝖽𝗂𝖺', kaomoji: KAOMOJI.cool, index: 9 },
+  perfil: { title: 'PERFIL', icon: '🌸', sub: '𝗅𝗈𝗏𝖾 & 𝖽𝖺𝗍𝗈𝗌', kaomoji: KAOMOJI.love, index: 10 },
+  stickers: { title: 'STICKERS', icon: '⭐', sub: '𝗌𝗍𝗂𝖼𝗄𝖾𝗋 𝗆𝖺𝗄𝖾𝗋', kaomoji: KAOMOJI.wink, index: 11 },
+  tools: { title: 'HERRAMIENTAS', icon: '💐', sub: '𝗂𝖺 & 𝗎𝗍𝗂𝗅𝗂𝖽𝖺𝖽𝖾𝗌', kaomoji: KAOMOJI.cool, index: 12 },
+  logos: { title: 'LOGOS', icon: '🍰', sub: '𝗅𝗈𝗀𝗈 𝗆𝖺𝗄𝖾𝗋', kaomoji: KAOMOJI.sparkle, index: 13 },
 };
 
 const PERMISSION_LABEL = {

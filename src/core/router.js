@@ -14,7 +14,7 @@ import { checkPermission } from '../security/permissions.js';
 import { applyResult } from './context.js';
 import { ok, fail } from '../services/result.js';
 import { splitArgs } from '../utils/text.js';
-import { auditRepo, statsRepo, ALLOWED_PREFIXES } from '../db/index.js';
+import { auditRepo, statsRepo, mutedRepo, ALLOWED_PREFIXES } from '../db/index.js';
 import { scoped } from './logger.js';
 import { resolveCommandForInstance } from './custom-registry.js';
 
@@ -95,6 +95,24 @@ export async function dispatch(ctx, parsed) {
   if (ctx.isGroup && ctx.group?.locked && !ctx.author.isAdmin) {
     log.debug({ command: command.name, group: ctx.group.groupId }, 'comando ignorado: grupo cerrado');
     return false;
+  }
+
+  // modo solo admins (.onlyadmin): los miembros no reciben respuesta.
+  if (ctx.isGroup && ctx.group?.config?.adminonly && !ctx.author.isAdmin) {
+    log.debug({ command: command.name, group: ctx.group.groupId }, 'comando ignorado: modo solo admins');
+    return false;
+  }
+
+  // silenciados (.mute): se borra el mensaje y no hay respuesta.
+  // Solo no-admins: el staff siempre puede intervenir (.unmute).
+  if (ctx.isGroup && ctx.messageId && !ctx.author.isAdmin && ctx.group?.botIsAdmin) {
+    try {
+      if (mutedRepo.isMuted(ctx.group.groupId, ctx.author.jid)) {
+        await ctx.client.deleteMessage?.(ctx.chatJid, ctx.raw?.key).catch(() => null);
+        log.debug({ command: command.name, group: ctx.group.groupId }, 'comando ignorado: usuario silenciado');
+        return false;
+      }
+    } catch {}
   }
 
   // rate limit (seguridad #9)

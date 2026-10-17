@@ -11,17 +11,35 @@ import { rolesCommands } from './roles.js';
 import { teamCommands } from './team.js';
 import { socialCommands } from './social.js';
 import { adminCommands } from './admin.js';
+import { adminExtraCommands } from './adminextras.js';
 import { infoCommands, setRegistry } from './info.js';
+import { sysCommands } from './sysinfo.js';
 import { activationCommands } from './activation.js';
+import { animeCommands } from './anime.js';
+import { economyCommands } from './economy.js';
+import { downloadCommands } from './download.js';
+import { perfilCommands } from './perfil.js';
+import { stickersCommands } from './stickers.js';
+import { toolsCommands } from './tools.js';
+import { logosCommands } from './logos.js';
 
 const MODULES = [
   ['info', infoCommands],
+  ['info', sysCommands],
   ['activation', activationCommands],
   ['registro', registroCommands],
   ['roles', rolesCommands],
   ['team', teamCommands],
   ['social', socialCommands],
   ['admin', adminCommands],
+  ['admin', adminExtraCommands],
+  ['anime', animeCommands],
+  ['economy', economyCommands],
+  ['download', downloadCommands],
+  ['perfil', perfilCommands],
+  ['stickers', stickersCommands],
+  ['tools', toolsCommands],
+  ['logos', logosCommands],
 ];
 
 const list = [];
