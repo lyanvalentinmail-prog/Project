@@ -16,6 +16,7 @@ import { ok, fail } from '../services/result.js';
 import { splitArgs } from '../utils/text.js';
 import { auditRepo, statsRepo, ALLOWED_PREFIXES } from '../db/index.js';
 import { scoped } from './logger.js';
+import { resolveCommandForInstance } from './custom-registry.js';
 
 const log = scoped('router');
 
@@ -64,7 +65,18 @@ export function parseCommand(text, ctx) {
  * @returns {Promise<boolean>} true si se respondió algo
  */
 export async function dispatch(ctx, parsed) {
-  const command = registry.get(parsed.name);
+  // Resolución con personalización por bot (alias extra, customs, disabled)
+  let command = null;
+  let resolved = null;
+  try {
+    resolved = resolveCommandForInstance(ctx.instance, parsed.name);
+    if (resolved?.disabled) {
+      await applyResult(ctx, fail('sys.invalid', { command: parsed.name, message: `El comando "${parsed.name}" está deshabilitado en este bot.`, hint: `Actívalo en el panel web → Mis Bots → Editar → Comandos.` }));
+      return true;
+    }
+    if (resolved?.command) command = resolved.command;
+  } catch {}
+  if (!command) command = registry.get(parsed.name);
 
   if (!command) {
     const suggestion = registry.suggest(parsed.name);

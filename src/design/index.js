@@ -112,6 +112,9 @@ export const VIEWS = {
  * @returns {string}
  */
 export function render(view, data = {}) {
+  if (view === 'custom.response') {
+    return data?.text ? String(data.text) : '';
+  }
   const template = VIEWS[view];
   if (typeof template !== 'function') {
     return errorTemplate({

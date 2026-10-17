@@ -64,7 +64,18 @@ function withAdminNumbers(row) {
     const check = Array.isArray(stored) ? normalizeAdminNumbers(stored) : null;
     if (check?.ok) adminNumbers = check.value;
   } catch { /* lista inválida: sin admins configurados */ }
-  return { ...row, admin_numbers: adminNumbers };
+  // menu_style y custom_config (nuevo en v6) con defaults seguros
+  const menu_style = row.menu_style || 'versova';
+  let custom_config = '{}';
+  try {
+    // si es null o inválido, normalizar
+    if (row.custom_config == null) custom_config = '{}';
+    else {
+      JSON.parse(row.custom_config);
+      custom_config = row.custom_config;
+    }
+  } catch { custom_config = '{}'; }
+  return { ...row, admin_numbers: adminNumbers, menu_style, custom_config };
 }
 
 export const instancesRepo = {
@@ -179,5 +190,18 @@ export const instancesRepo = {
 
   remove(id) {
     return getDb().prepare(`DELETE FROM ${TABLE} WHERE id = ?`).run(id).changes;
+  },
+
+  setMenuStyle(id, style) {
+    getDb().prepare(`UPDATE ${TABLE} SET menu_style = ?, updated_at = ? WHERE id = ?`).run(String(style), Date.now(), id);
+  },
+  setCustomConfig(id, json) {
+    const str = typeof json === 'string' ? json : JSON.stringify(json);
+    getDb().prepare(`UPDATE ${TABLE} SET custom_config = ?, updated_at = ? WHERE id = ?`).run(str, Date.now(), id);
+  },
+  getCustomConfig(id) {
+    const row = this.byId(id);
+    if (!row) return null;
+    try { return JSON.parse(row.custom_config || '{}'); } catch { return {}; }
   },
 };

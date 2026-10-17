@@ -11,8 +11,21 @@ import { SYM, RULE, KAOMOJI, fancyNumber, currentPrefix } from './theme.js';
 /** Prefijo real del sub-bot (mutable por mensaje). */
 const P = { toString: () => currentPrefix() };
 
-/** Menú principal (`.menu`) — diseño oficial de ◢禍◣ Versova. */
-export function mainMenu({ status = 'ᴏɴʟɪɴᴇ', prefix = P, name = IDENTITY.name, team = IDENTITY.team, version = IDENTITY.version } = {}) {
+/** Menú principal ahora es dinámico: delega en menu.service + estilos */
+import { buildMenuData } from '../services/menu.service.js';
+import { renderByStyle } from './menu-styles.js';
+
+export function mainMenu({ status = 'ᴏɴʟɪɴᴇ', prefix = P, name = IDENTITY.name, team = IDENTITY.team, version = IDENTITY.version, instance = null, style = null } = {}) {
+  // Si hay instancia, usa su custom_config
+  try {
+    if (instance) {
+      const data = buildMenuData(instance, String(prefix));
+      const chosen = style || data.style || 'versova';
+      return renderByStyle(chosen, { ...data, status, prefix: String(prefix), name, team, version });
+    }
+  } catch {}
+  // Fallback 100% idéntico al diseño original para tests y sin instancia
+  const Pstr = String(prefix);
   return `ㅤㅤㅤㅤۖㅤㅤㅤㅤㅤۖ
 ㅤㅤ࿚ׄ࿙ֹ࿚᮫᜔۬፟֟࿙ֹ࿚ׄ࿙
 ㅤㅤㅤㅤㅤ𓆩ㅤ禊ㅤ𓆪
@@ -33,7 +46,7 @@ export function mainMenu({ status = 'ᴏɴʟɪɴᴇ', prefix = P, name = IDENTIT
 
 ㅤ𖦹ㅤ𝖭𝖺𝗆𝖾ㅤ⁙ㅤ${name}
 ㅤ𖦹ㅤ𝖳𝖾𝖺𝗆ㅤ⁙    ${team}
-ㅤ𖦹ㅤ𝖯𝗋𝖾𝖿𝗂𝗑ㅤ⁙ㅤ${prefix}
+ㅤ𖦹ㅤ𝖯𝗋𝖾𝖿𝗂𝗑ㅤ⁙ㅤ${Pstr}
 ㅤ𖦹ㅤ𝖲𝗍𝖺𝗍𝗎𝗌ㅤ⁙ㅤ${status}
 ㅤ𖦹ㅤ𝖵𝖾𝗋𝗌𝗂𝗈𝗇ㅤ⁙ㅤ${version}
 
@@ -47,14 +60,14 @@ export function mainMenu({ status = 'ᴏɴʟɪɴᴇ', prefix = P, name = IDENTIT
 ㅤㅤ𓂃 𝗆𝖾𝗆𝖻𝖾𝗋 𝗋𝖾𝗀𝗂𝗌𝗍𝗋𝖺𝗍𝗂𝗈𝗇 𓂃
 ㅤㅤㅤ(｡•̀ᴗ-)✧
 
-ㅤ୨ৎㅤ${P}reg <nombre.edad>
-ㅤ୨ৎㅤ${P}unreg
-ㅤ୨ৎㅤ${P}rol <personaje>
-    ୨ৎㅤ${P}roles - muestra roles ocupados
-ㅤ୨ৎㅤ${P}ficha
-ㅤ୨ৎㅤ${P}editar <nombre.edad>
-ㅤ୨ৎㅤ${P}mirol
-ㅤ୨ৎㅤ${P}cambiarol <personaje>
+ㅤ୨ৎㅤ${Pstr}reg <nombre.edad>
+ㅤ୨ৎㅤ${Pstr}unreg
+ㅤ୨ৎㅤ${Pstr}rol <personaje>
+    ୨ৎㅤ${Pstr}roles - muestra roles ocupados
+ㅤ୨ৎㅤ${Pstr}ficha
+ㅤ୨ৎㅤ${Pstr}editar <nombre.edad>
+ㅤ୨ৎㅤ${Pstr}mirol
+ㅤ୨ৎㅤ${Pstr}cambiarol <personaje>
 
 ㅤㅤ࿙☕࿚ㅤ𓆩 ♱ 𓆪
 ㅤㅤㅤ( ᴗ͈ˬᴗ͈)ㅤ⁙
@@ -67,10 +80,10 @@ export function mainMenu({ status = 'ᴏɴʟɪɴᴇ', prefix = P, name = IDENTIT
 ㅤㅤ𓂃 𝗍𝖾𝖺𝗆 𝗆𝖺𝗇𝖺𝗀𝖾𝗆𝖾𝗇𝗍 𓂃
 ㅤㅤㅤ(๑˃̵ᴗ˂̵)و
 
-ㅤ୨ৎㅤ${P}team
-ㅤ୨ৎㅤ${P}miembros
-ㅤ୨ৎㅤ${P}afk <motivo> (si manda mensaje despues de este comando sale del afk)
-ㅤ୨ৎㅤ${P}inactivos
+ㅤ୨ৎㅤ${Pstr}team
+ㅤ୨ৎㅤ${Pstr}miembros
+ㅤ୨ৎㅤ${Pstr}afk <motivo> (si manda mensaje despues de este comando sale del afk)
+ㅤ୨ৎㅤ${Pstr}inactivos
 
 ㅤㅤ࿙🥢࿚ㅤ𓆩 ♱ 𓆪
 ㅤㅤㅤ(˶˃ ᵕ ˂˶)ㅤ⁙
@@ -83,8 +96,8 @@ export function mainMenu({ status = 'ᴏɴʟɪɴᴇ', prefix = P, name = IDENTIT
 ㅤㅤ𓂃 𝗋𝗈𝗅𝖾 𝗌𝗒𝗌𝗍𝖾𝗆 𓂃
 ㅤㅤㅤ( ੭ ˙ᗜ˙ )੭
 
-ㅤ୨ৎㅤ${P}reservar
-ㅤ୨ৎㅤ${P}liberar - libera su rol
+ㅤ୨ৎㅤ${Pstr}reservar
+ㅤ୨ৎㅤ${Pstr}liberar - libera su rol
 
 ㅤㅤ࿙𖤐࿚ㅤ𓆩 ♱ 𓆪
 ㅤㅤㅤ( ᵕ ᴗ ᵕ )ㅤ⁙
@@ -97,12 +110,12 @@ export function mainMenu({ status = 'ᴏɴʟɪɴᴇ', prefix = P, name = IDENTIT
 ㅤㅤ𓂃 𝗌𝗈𝖼𝗂𝖺𝗅 & 𝖿𝗎𝗇 𓂃
 ㅤㅤㅤ(づ๑•ᴗ•๑)づ♡
 
-ㅤ୨ৎㅤ${P}perfil <@usuario>
-ㅤ୨ৎㅤ${P}pareja <@usuario>
-ㅤ୨ৎㅤ${P}rechazar
-ㅤ୨ৎㅤ${P}ship <@usuario> <@usuario>
-ㅤ୨ৎㅤ${P}reglas
-ㅤ୨ৎㅤ${P}admins
+ㅤ୨ৎㅤ${Pstr}perfil <@usuario>
+ㅤ୨ৎㅤ${Pstr}pareja <@usuario>
+ㅤ୨ৎㅤ${Pstr}rechazar
+ㅤ୨ৎㅤ${Pstr}ship <@usuario> <@usuario>
+ㅤ୨ৎㅤ${Pstr}reglas
+ㅤ୨ৎㅤ${Pstr}admins
 
 ㅤㅤ࿙☕࿚ㅤ𓆩 ♱ 𓆪
 ㅤㅤㅤ(っ˘ω˘ς)ㅤ⁙
@@ -115,18 +128,18 @@ export function mainMenu({ status = 'ᴏɴʟɪɴᴇ', prefix = P, name = IDENTIT
 ㅤㅤ𓂃 𝗌𝗍𝖺𝖿𝖿 𝗈𝗇𝗅𝗒 𓂃
 ㅤㅤㅤ( •̀ - •́ )✧
 
-ㅤ୨ৎㅤ${P}add
-ㅤ୨ৎㅤ${P}expulsar
-ㅤ୨ৎㅤ${P}ban
-ㅤ୨ৎㅤ${P}unban
-ㅤ୨ৎㅤ${P}resetrol
-ㅤ୨ৎㅤ${P}warn
-ㅤ୨ৎㅤ${P}unwarn
-ㅤ୨ৎㅤ${P}acceptrol
-ㅤ୨ৎㅤ${P}denyrol
-ㅤ୨ৎㅤ${P}anuncio
-ㅤ୨ৎㅤ${P}close - hace q solo admins puedan hablar
-ㅤ୨ৎㅤ${P}open
+ㅤ୨ৎㅤ${Pstr}add
+ㅤ୨ৎㅤ${Pstr}expulsar
+ㅤ୨ৎㅤ${Pstr}ban
+ㅤ୨ৎㅤ${Pstr}unban
+ㅤ୨ৎㅤ${Pstr}resetrol
+ㅤ୨ৎㅤ${Pstr}warn
+ㅤ୨ৎㅤ${Pstr}unwarn
+ㅤ୨ৎㅤ${Pstr}acceptrol
+ㅤ୨ৎㅤ${Pstr}denyrol
+ㅤ୨ৎㅤ${Pstr}anuncio
+ㅤ୨ৎㅤ${Pstr}close - hace q solo admins puedan hablar
+ㅤ୨ৎㅤ${Pstr}open
 
 
 ㅤㅤ࿚ׄ࿙ֹ࿚᮫᜔۬፟֟࿙ֹ࿚ׄ࿙
@@ -149,6 +162,9 @@ export function mainMenu({ status = 'ᴏɴʟɪɴᴇ', prefix = P, name = IDENTIT
 
 ㅤㅤ࿙ׄ࿚ㅤ𓆩 ☕ 𝟔𝟔 ; 𝟕𝟕𓆪ㅤ࿙ׄ࿚`;
 }
+
+/** Alias para compat: algunos tests importan mainMenu directamente */
+export const legacyMainMenu = mainMenu;
 
 /* ── ayuda detallada generada desde el registro de comandos ───── */
 

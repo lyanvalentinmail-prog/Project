@@ -23,14 +23,17 @@ export const infoCommands = [
     description: 'Muestra el menú oficial de comandos de VÉRSOVA.',
     example: '.menu',
     groupOnly: false,
-    run: (ctx) =>
-      ok('menu.main', {
+    run: (ctx) => {
+      // Pasar instancia para que el menú sea personalizado por bot
+      return ok('menu.main', {
         status: 'ᴏɴʟɪɴᴇ',
         prefix: ctx.instance?.prefix ?? ctx.prefix ?? IDENTITY.prefix,
         name: IDENTITY.name,
         team: IDENTITY.team,
         version: IDENTITY.version,
-      }),
+        instance: ctx.instance ?? null,
+      });
+    },
   },
   {
     name: 'help',
