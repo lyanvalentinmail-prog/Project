@@ -176,8 +176,9 @@ carpeta de credenciales en `sessions/` (fuera de git) y su propio prefijo.
 ## 𓆩 ⛓️ 𓆪 Comandos (53)
 
 Cada bot usa el **prefijo que elegiste al crearlo** (`#` `-` `+` `.` `/`, por defecto `.`)
-· idioma español · `«prefijo»menu` muestra el menú oficial del team y `«prefijo»help <sección>`
-el detalle. Referencia completa en **[docs/COMANDOS.md](docs/COMANDOS.md)**.
+· idioma español · `«prefijo»menu` muestra el menú oficial del team y `«prefijo»help`
+explica todos los comandos (`«prefijo»help <sección>` detalla una sección). Referencia
+completa en **[docs/COMANDOS.md](docs/COMANDOS.md)**.
 
 | Sección | Comandos |
 |---|---|
