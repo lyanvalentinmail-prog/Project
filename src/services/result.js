@@ -6,8 +6,11 @@
  *   {
  *     ok:      boolean,
  *     view:    clave de plantilla (design/index.js),
- *     data:    datos para la plantilla,
+ *     data:    datos para la plantilla (puede incluir `media`:
+ *              { kind: 'image'|'sticker'|'video'|'audio', buffer|url, mimetype })
+ *              que se envía como mensaje de medios con el texto como caption),
  *     extra:   mensajes adicionales  → { to, view, data, mentions, linkRequest }
+ *     mediaExtra: archivos extra    → [{ kind, buffer|url, mimetype, caption }]
  *     actions: efectos sobre WhatsApp → { kind, ... }
  *   }
  *
@@ -34,12 +37,12 @@ export const action = {
   refreshAdmins: () => ({ kind: 'refreshAdmins' }),
 };
 
-export function ok(view, data = {}, { extra = [], actions = [], linkRequest = null } = {}) {
-  return { ok: true, view, data, extra, actions, linkRequest };
+export function ok(view, data = {}, { extra = [], actions = [], linkRequest = null, mediaExtra = [] } = {}) {
+  return { ok: true, view, data, extra, actions, linkRequest, mediaExtra };
 }
 
-export function fail(view, data = {}, { extra = [], actions = [], linkRequest = null } = {}) {
-  return { ok: false, view, data, extra, actions, linkRequest };
+export function fail(view, data = {}, { extra = [], actions = [], linkRequest = null, mediaExtra = [] } = {}) {
+  return { ok: false, view, data, extra, actions, linkRequest, mediaExtra };
 }
 
 /** Resultado de texto plano (sin plantilla). */
@@ -50,4 +53,5 @@ export const text = (value, extraOk = true) => ({
   data: {},
   extra: [],
   actions: [],
+  mediaExtra: [],
 });

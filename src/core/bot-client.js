@@ -24,6 +24,8 @@ import {
   isJidStatusBroadcast,
   isJidNewsletter,
   jidNormalizedUser,
+  generateWAMessageFromContent,
+  proto,
 } from '@whiskeysockets/baileys';
 
 import { env } from '../config/env.js';
@@ -545,6 +547,65 @@ export class BotClient extends EventEmitter {
       log.warn({ err: error, jid, attempt }, 'no se pudo enviar el mensaje');
       throw error;
     }
+  }
+
+  /**
+   * Menú de lista interactivo (native flow `single_select`):
+   * info del bot arriba y debajo un botón que despliega las categorías.
+   *
+   * @param {string} jid chat destino
+   * @param {object} list { title, body, footer, buttonText, sections:[{ title, rows:[{ id, title, description }] }] }
+   * @param {object} options { quoted }
+   * @returns {Promise<object|null>} mensaje generado (o null si falló)
+   */
+  async sendList(jid, list, options = {}) {
+    const target = normalizeJid(jid);
+    const sections = (list.sections ?? []).slice(0, 10).map((section) => ({
+      title: String(section.title ?? '').slice(0, 60),
+      highlight_label: '',
+      rows: (section.rows ?? []).slice(0, 20).map((row, index) => ({
+        header: '',
+        title: String(row.title ?? `Opción ${index + 1}`).slice(0, 24),
+        description: String(row.description ?? '').slice(0, 72),
+        id: String(row.id ?? `${index + 1}`).slice(0, 256),
+      })),
+    })).filter((section) => section.rows.length);
+    if (!sections.length) return null;
+
+    const task = this._sendQueue.then(async () => {
+      const interactive = proto.Message.InteractiveMessage.create({
+        body: proto.Message.InteractiveMessage.Body.create({ text: String(list.body ?? '') }),
+        footer: proto.Message.InteractiveMessage.Footer.create({ text: String(list.footer ?? '') }),
+        header: proto.Message.InteractiveMessage.Header.create({
+          title: String(list.title ?? '').slice(0, 60),
+          subtitle: '',
+          hasMediaAttachment: false,
+        }),
+        nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
+          buttons: [{
+            name: 'single_select',
+            buttonParamsJson: JSON.stringify({
+              title: String(list.buttonText ?? 'Ver opciones').slice(0, 40),
+              sections,
+            }),
+          }],
+          messageParamsJson: JSON.stringify({ limited_time_offer: {}, bottom_sheet: { in_thread_buttons_limit: 1 } }),
+        }),
+        contextInfo: { forwardingScore: 1, isForwarded: true },
+      });
+      const message = generateWAMessageFromContent(target, {
+        viewOnceMessage: { message: { interactiveMessage: interactive } },
+      }, { quoted: options.quoted, userJid: this.jid });
+      await this.sock.relayMessage(target, message.message, { messageId: message.key.id });
+      this._rememberMessage({ ...message.key, fromMe: true });
+      await sleep(350);
+      return message;
+    }).catch((error) => {
+      log.warn({ err: error, jid: target }, 'no se pudo enviar el menú de lista');
+      return null;
+    });
+    this._sendQueue = task.catch(() => null);
+    return task;
   }
 
   /** Baileys espera GroupMetadata, NO el contenedor interno { at, data }. */

@@ -123,6 +123,10 @@ export const VIEWS = {
   'dl.music': E.dlMusic,
   'dl.link': E.dlLink,
   'dl.lyrics': E.dlLyrics,
+  'dl.tiktok': E.dlTiktok,
+  'dl.instagram': E.dlInstagram,
+  'dl.spotify': E.dlSpotify,
+  'dl.pinterest': E.dlPinterest,
 
   // perfil extendido (paquete Raiden)
   'perfil.proposal': E.perfilProposal,

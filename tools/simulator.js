@@ -65,6 +65,13 @@ class FakeClient {
     return message;
   }
 
+  /** Lista interactiva (modo `menuMode: 'list'`): se registra igual que un envío. */
+  async sendList(jid, payload) {
+    const message = { key: { id: `SIM${Date.now()}${this.sent.length}`, remoteJid: jid }, content: { list: payload } };
+    this.sent.push(message);
+    return message;
+  }
+
   async groupMetadata() {
     return this.metadata;
   }
@@ -113,6 +120,22 @@ class FakeClient {
   contactName(jid) {
     return this.metadata.participants.find((p) => p.id === normalizeJid(jid))?.notify ?? null;
   }
+}
+
+/** Traduce contenido rico (imagen, sticker, lista…) a texto para aserciones. */
+export function contentToText(content) {
+  if (!content) return '';
+  if (typeof content.text === 'string') return content.text;
+  if (content.list) {
+    const rows = (content.list.sections ?? []).flatMap((s) => (s.rows ?? []).map((r) => `${r.title} · ${r.description} → ${r.id}`));
+    return [`[lista] ${content.list.title ?? ''}`, content.list.body ?? '', ...rows].filter(Boolean).join('\n');
+  }
+  if (content.sticker) return '[sticker]';
+  if (content.image) return `[imagen]${content.caption ? ` ${content.caption}` : ''}`;
+  if (content.video) return `[video]${content.caption ? ` ${content.caption}` : ''}`;
+  if (content.audio) return '[audio]';
+  if (content.document) return `[documento]${content.caption ? ` ${content.caption}` : ''}`;
+  return '';
 }
 
 /* ── montaje del entorno de simulación ───────────────────────── */
@@ -190,7 +213,7 @@ export async function createSimulation({ dbPath = ':memory:', groupJid = DEMO_GR
     const wasCommand = await handleCommandMessage(ctx);
     if (!wasCommand) await events.onMessage(ctx);
 
-    return client.sent.slice(before).map((m) => m.content.text);
+    return client.sent.slice(before).map((m) => contentToText(m.content)).filter(Boolean);
   }
 
   return { client, instance, groupJid, addPerson, say, registry };

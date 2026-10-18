@@ -26,6 +26,15 @@ function interpolateResponse(template, ctx) {
  * Resuelve un comando para una instancia específica con aliases y customs.
  * Devuelve { command, isCustom, customDef } o null si no existe / deshabilitado
  */
+/** ¿La categoría efectiva del comando está apagada para esta instancia? */
+function categoryIsDisabled(custom, commandName, baseCategory) {
+  const cats = new Set((custom?.disabledCategories || []).map((s) => s.toLowerCase()));
+  if (!cats.size) return false;
+  const overrides = custom?.categoryOverrides || {};
+  const effective = String(overrides[String(commandName).toLowerCase()] || baseCategory || '').toLowerCase();
+  return cats.has(effective);
+}
+
 export function resolveCommandForInstance(instance, nameRaw) {
   const name = String(nameRaw || '').toLowerCase().trim();
   if (!name) return null;
@@ -36,6 +45,7 @@ export function resolveCommandForInstance(instance, nameRaw) {
   // 1. Built-in directo o alias global
   let builtin = registry.get(name);
   if (builtin && !disabled.has(builtin.name.toLowerCase())) {
+    if (categoryIsDisabled(custom, builtin.name, builtin.category)) return { disabled: true, name, viaCategory: true };
     return { command: builtin, isCustom: false };
   }
   // 2. Aliases extra por instancia
@@ -44,7 +54,10 @@ export function resolveCommandForInstance(instance, nameRaw) {
       if (disabled.has(cmdName.toLowerCase())) continue;
       if (aliases.map((a) => a.toLowerCase()).includes(name)) {
         const target = registry.get(cmdName);
-        if (target) return { command: target, isCustom: false, viaAlias: name };
+        if (target) {
+          if (categoryIsDisabled(custom, target.name, target.category)) return { disabled: true, name, viaCategory: true };
+          return { command: target, isCustom: false, viaAlias: name };
+        }
       }
     }
   }
@@ -52,6 +65,7 @@ export function resolveCommandForInstance(instance, nameRaw) {
   if (custom?.customCommands) {
     for (const cc of custom.customCommands) {
       if (disabled.has(cc.name.toLowerCase())) continue;
+      if (categoryIsDisabled(custom, cc.name, cc.category)) continue;
       if (cc.name.toLowerCase() === name) return { command: buildCustomCommand(cc), isCustom: true, customDef: cc };
       const aliasMatch = (cc.aliases || []).some((a) => a.toLowerCase() === name);
       if (aliasMatch) return { command: buildCustomCommand(cc), isCustom: true, customDef: cc };
@@ -80,23 +94,29 @@ function buildCustomCommand(def) {
   };
 }
 
-/** Verifica si un comando está deshabilitado */
+/** Verifica si un comando está deshabilitado (directamente o por su categoría) */
 export function isDisabled(instance, commandName) {
   if (!instance) return false;
   const custom = customRepo.get(instance.id);
-  return (custom.disabled || []).map((s)=>s.toLowerCase()).includes(String(commandName).toLowerCase());
+  if ((custom.disabled || []).map((s)=>s.toLowerCase()).includes(String(commandName).toLowerCase())) return true;
+  const builtin = registry.get(commandName);
+  if (builtin && categoryIsDisabled(custom, builtin.name, builtin.category)) return true;
+  return false;
 }
 
-/** Lista todos los comandos visibles para una instancia (built-in + custom) */
+/**
+ * Lista TODOS los comandos visibles (built-in + custom) con banderas de
+ * estado para el panel: disabled (apagado a mano) y categoryDisabled
+ * (su categoría completa está apagada). El menú filtra ambos casos.
+ */
 export function listCommandsForInstance(instance) {
-  const custom = instance ? customRepo.get(instance.id) : { aliases: {}, disabled: [], customCommands: [], categoryOverrides: {}, categories: [] };
+  const custom = instance ? customRepo.get(instance.id) : { aliases: {}, disabled: [], disabledCategories: [], customCommands: [], categoryOverrides: {}, categories: [] };
   const disabled = new Set((custom.disabled || []).map((s)=>s.toLowerCase()));
   const aliasExtra = custom.aliases || {};
   const overrides = custom.categoryOverrides || {};
   const out = [];
   for (const c of registry.list) {
     if (c.hidden) continue;
-    if (disabled.has(c.name.toLowerCase())) continue;
     const cat = overrides[c.name.toLowerCase()] || c.category;
     out.push({
       name: c.name,
@@ -106,16 +126,14 @@ export function listCommandsForInstance(instance) {
       permission: c.permission,
       aliases: [...(c.aliases||[]), ...(aliasExtra[c.name.toLowerCase()]||[])],
       isCustom: false,
-      disabled: false,
+      disabled: disabled.has(c.name.toLowerCase()),
+      categoryDisabled: categoryIsDisabled(custom, c.name, c.category),
       groupOnly: c.groupOnly,
       hidden: c.hidden,
     });
   }
   for (const cc of (custom.customCommands||[])) {
-    if (disabled.has(cc.name.toLowerCase())) continue;
-    if (cc.hidden) continue; // hide hidden customs from menu? but still executable
-    // We'll still include hidden? For menu we filter hidden, but for listing we include flag
-    // To keep menu clean, we filter hidden here too? Let's filter hidden for menuData but keep for API
+    if (cc.hidden) continue;
     out.push({
       name: cc.name,
       category: cc.category,
@@ -124,12 +142,12 @@ export function listCommandsForInstance(instance) {
       permission: cc.permission,
       aliases: cc.aliases || [],
       isCustom: true,
-      disabled: false,
+      disabled: disabled.has(cc.name.toLowerCase()),
+      categoryDisabled: categoryIsDisabled(custom, cc.name, cc.category),
       groupOnly: cc.groupOnly,
       hidden: cc.hidden,
       response: cc.response,
     });
   }
-  // Also include disabled but mark? For UI we need disabled list, so we include separately via custom.disabled
   return out;
 }

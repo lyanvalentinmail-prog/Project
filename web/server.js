@@ -56,7 +56,8 @@ export async function createWebServer({ manager, port = env.webPort, host = env.
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', true);
-  app.use(express.json({ limit: '256kb' }));
+  // 2 MB: el banner del menú viaja como data URL dentro del JSON de personalización
+  app.use(express.json({ limit: '2mb' }));
 
   // El panel está abierto por diseño: auth es una puerta neutra.
   const auth = createAuth();

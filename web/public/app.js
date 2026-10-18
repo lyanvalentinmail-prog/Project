@@ -1293,7 +1293,7 @@ async function openEditInstance(instance) {
   const content = $('#modal-content');
   // Render inmediato síncrono para que tests y feedback instantáneo funcionen
   // (luego se actualiza con datos del servidor)
-  state.editDraft = { menuStyle: instance.menuStyle || 'versova', aliases: {}, disabled: [], categories: [], customCommands: [], categoryOverrides: {} };
+  state.editDraft = { menuStyle: instance.menuStyle || 'versova', menuMode: 'text', banner: null, aliases: {}, disabled: [], disabledCategories: [], categories: [], customCommands: [], categoryOverrides: {} };
   state.editCommandsData = { commands: [], customization: state.editDraft, prefix: instance.prefix };
   state.editStyles = [
       { id: 'versova', label: 'Versova (Oficial)', description: 'El diseño clásico de VÉRSOVA, con kaomojis y bloques decorados.', preview: 'Elaborado · con encabezado, 5 bloques y footer' },
@@ -1316,15 +1316,18 @@ async function openEditInstance(instance) {
     ]);
     if (cmds?.ok) {
       state.editCommandsData = cmds;
-      state.editDraft = JSON.parse(JSON.stringify(cmds.customization || { menuStyle: 'versova', aliases: {}, disabled: [], categories: [], customCommands: [], categoryOverrides: {} }));
+      state.editDraft = JSON.parse(JSON.stringify(cmds.customization || { menuStyle: 'versova', menuMode: 'text', banner: null, aliases: {}, disabled: [], disabledCategories: [], categories: [], customCommands: [], categoryOverrides: {} }));
       if (!state.editDraft.aliases) state.editDraft.aliases = {};
       if (!state.editDraft.disabled) state.editDraft.disabled = [];
       if (!state.editDraft.categories) state.editDraft.categories = [];
       if (!state.editDraft.customCommands) state.editDraft.customCommands = [];
       if (!state.editDraft.categoryOverrides) state.editDraft.categoryOverrides = {};
+      if (!state.editDraft.disabledCategories) state.editDraft.disabledCategories = [];
+      if (!state.editDraft.menuMode) state.editDraft.menuMode = 'text';
+      if (state.editDraft.banner === undefined) state.editDraft.banner = null;
       if (!state.editDraft.menuStyle) state.editDraft.menuStyle = cmds.menuStyle || instance.menuStyle || 'versova';
     } else {
-      state.editDraft = { menuStyle: instance.menuStyle || 'versova', aliases: {}, disabled: [], categories: [], customCommands: [], categoryOverrides: {} };
+      state.editDraft = { menuStyle: instance.menuStyle || 'versova', menuMode: 'text', banner: null, aliases: {}, disabled: [], disabledCategories: [], categories: [], customCommands: [], categoryOverrides: {} };
       state.editCommandsData = { commands: [], customization: state.editDraft, prefix: instance.prefix };
     }
     state.editStyles = styles?.styles || [
@@ -1403,12 +1406,17 @@ function renderEditModal() {
       catKeys = Object.keys(filteredGrouped).sort();
       if (catKeys.length === 0) return `<div class="edit-card" style="text-align:center;color:var(--text-muted);padding:20px;">No hay resultados para "${escapeHtml(filter)}"</div>`;
       let html = `<div class="command-search">${icon('search')}<input id="edit-command-search" type="search" placeholder="Buscar comando…" value="${escapeHtml(state.editFilter)}" autocomplete="off" /></div>`;
-      html += Object.entries(filteredGrouped).map(([cat, list]) => `<div class="edit-card"><h4>${icon('hash')} ${escapeHtml(cat)} <span class="badge">${list.length}</span></h4><div style="display:grid;gap:8px;">${list.map((c) => renderCommandRow(c, draft, disabledSet)).join('')}</div></div>`).join('');
+      html += Object.entries(filteredGrouped).map(([cat, list]) => `<div class="edit-card"><h4>${icon('hash')} ${escapeHtml(cat)} <span class="badge">${list.length}</span></h4><div style="display:grid;gap:8px;">${list.map((c) => renderCommandRow(c, draft, disabledSet, new Set((draft.disabledCategories || []).map((s) => String(s).toLowerCase())))).join('')}</div></div>`).join('');
       return html;
     }
     let html = `<div class="command-search">${icon('search')}<input id="edit-command-search" type="search" placeholder="Buscar comando por nombre, alias o descripción…" value="${escapeHtml(state.editFilter)}" autocomplete="off" /></div>`;
-    html += `<div class="edit-card" style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;"><span style="font-size:11px;color:var(--text-secondary);">${all.length} comandos visibles · ${draft.disabled.length} deshabilitados · ${draft.customCommands.length} customs</span><button class="btn btn-outline btn-small" type="button" data-action="reset-commands">Restablecer</button></div>`;
-    html += Object.entries(grouped).sort(([a],[b])=>a.localeCompare(b)).map(([cat, list]) => `<div class="edit-card"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><h4>${icon('hash')} ${escapeHtml(cat)} <span class="badge">${list.length}</span></h4><span style="font-size:10px;color:var(--text-muted);">${list.filter((c)=>disabledSet.has(c.name.toLowerCase())).length ? 'algunos deshabilitados' : ''}</span></div><div style="display:grid;gap:8px;margin-top:10px;">${list.map((c) => renderCommandRow(c, draft, disabledSet)).join('')}</div></div>`).join('');
+    const catDisabledSet = new Set((draft.disabledCategories || []).map((s) => String(s).toLowerCase()));
+    html += `<div class="edit-card" style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;"><span style="font-size:11px;color:var(--text-secondary);">${all.length} comandos · ${draft.disabled.length} deshabilitados · ${(draft.disabledCategories||[]).length} categorías OFF · ${draft.customCommands.length} customs</span><button class="btn btn-outline btn-small" type="button" data-action="reset-commands">Restablecer</button></div>`;
+    html += Object.entries(grouped).sort(([a],[b])=>a.localeCompare(b)).map(([cat, list]) => {
+      const catOff = catDisabledSet.has(String(cat).toLowerCase());
+      const offCount = list.filter((c)=>disabledSet.has(c.name.toLowerCase())).length;
+      return `<div class="edit-card ${catOff ? 'is-cat-off' : ''}"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><h4>${icon('hash')} ${escapeHtml(cat)} <span class="badge">${list.length}</span></h4><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:10px;color:var(--text-muted);">${catOff ? 'CATEGORÍA OFF' : (offCount ? `${offCount} apagados` : '')}</span><button class="toggle-switch ${!catOff ? 'is-on' : ''}" type="button" data-action="toggle-menu-category" data-cat="${escapeHtml(cat)}" aria-pressed="${!catOff}" aria-label="${catOff ? 'Activar' : 'Desactivar'} toda la categoría ${escapeHtml(cat)}" title="${catOff ? 'Activar' : 'Desactivar'} toda la categoría"></button></div></div><div style="display:grid;gap:8px;margin-top:10px;">${list.map((c) => renderCommandRow(c, draft, disabledSet, catDisabledSet)).join('')}</div></div>`;
+    }).join('');
     return html;
   })();
   const categoriasHtml = (() => {
@@ -1427,8 +1435,12 @@ function renderEditModal() {
       { id: 'tools', title: 'HERRAMIENTAS', icon: '💐', sub: 'ia & utilidad', built: true },
       { id: 'logos', title: 'LOGOS', icon: '🍰', sub: 'logo maker', built: true },
     ];
-    let html = `<div class="edit-card"><h4>${icon('hash')} Categorías del sistema <span class="badge">13 fijas</span></h4><p style="margin:6px 0 0;color:var(--text-muted);font-size:11px;">Estas categorías no se pueden borrar, pero puedes mover comandos entre ellas y crear las tuyas.</p></div>`;
-    html += `<div class="category-grid">${builtins.map((b) => `<div class="category-card"><div class="category-card-head"><span class="cat-icon">${escapeHtml(b.icon)}</span><div><h5>${escapeHtml(b.title)}</h5><p>${escapeHtml(b.sub)} · ${escapeHtml(b.id)}</p></div></div><span style="font-size:10px;color:var(--text-muted);">Fija del sistema</span></div>`).join('')}</div>`;
+    const disabledCatSet = new Set((draft.disabledCategories || []).map((s) => String(s).toLowerCase()));
+    let html = `<div class="edit-card"><h4>${icon('hash')} Categorías del sistema <span class="badge">${builtins.length - [...disabledCatSet].filter((c)=>builtins.some((b)=>b.id===c)).length} activas</span></h4><p style="margin:6px 0 0;color:var(--text-muted);font-size:11px;">No se pueden borrar, pero sí <strong>quitar del menú</strong> con el interruptor: sus comandos se ocultan y dejan de responder. Actívalas cuando quieras. También puedes mover comandos entre categorías y crear las tuyas.</p></div>`;
+    html += `<div class="category-grid">${builtins.map((b) => {
+      const off = disabledCatSet.has(b.id);
+      return `<div class="category-card ${off ? 'is-disabled' : ''}"><div class="category-card-head"><span class="cat-icon">${escapeHtml(b.icon)}</span><div style="flex:1;min-width:0;"><h5>${escapeHtml(b.title)}</h5><p>${escapeHtml(b.sub)} · ${escapeHtml(b.id)}</p></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;"><button class="toggle-switch ${!off ? 'is-on' : ''}" type="button" data-action="toggle-menu-category" data-cat="${escapeHtml(b.id)}" aria-pressed="${!off}" aria-label="${off ? 'Activar' : 'Quitar'} categoría ${escapeHtml(b.id)}"></button><span style="font-size:9px;color:var(--text-muted);">${off ? 'quitada' : 'visible'}</span></div></div></div>`;
+    }).join('')}</div>`;
     if (draft.categories.length) {
       html += `<div class="edit-card"><h4>${icon('spark')} Tus categorías <span class="badge">${draft.categories.length}</span></h4><p style="margin:6px 0 10px;color:var(--text-muted);font-size:11px;">Aparecerán en el menú en el orden que las crees. Puedes asignarles comandos.</p><div class="category-grid">${draft.categories.map((cat) => `<div class="category-card is-custom"><div class="category-card-head"><span class="cat-icon">${escapeHtml(cat.icon)}</span><div style="flex:1;min-width:0;"><h5>${escapeHtml(cat.title)}</h5><p>${escapeHtml(cat.sub)} · id: ${escapeHtml(cat.id)}</p><small style="color:var(--text-muted);">${escapeHtml(cat.kaomoji)}</small></div><button class="icon-button" type="button" data-action="delete-category" data-id="${escapeHtml(cat.id)}" aria-label="Eliminar">${icon('close')}</button></div><div class="category-actions"><span class="alias-chip" style="font-size:10px;">${escapeHtml(cat.id)}</span></div></div>`).join('')}</div></div>`;
     } else {
@@ -1445,7 +1457,25 @@ function renderEditModal() {
     return html;
   })();
   const estiloHtml = (() => {
-    let html = `<div class="edit-card"><h4>${icon('spark')} Elige el estilo del menú</h4><p style="margin:6px 0;color:var(--text-muted);font-size:11px;">El menú es lo que ven tus usuarios con <code>${escapeHtml(instance.prefix || '.')}menu</code>. Cambia el estilo y previsualiza al instante.</p></div>`;
+    const menuMode = draft.menuMode === 'list' ? 'list' : 'text';
+    const banner = draft.banner || null;
+    const bannerSrc = banner ? (banner.dataUrl || banner.url || '') : '';
+    let html = `<div class="edit-card"><h4>${icon('spark')} Modo de entrega del menú</h4><p style="margin:6px 0 10px;color:var(--text-muted);font-size:11px;">Elige cómo llega el menú cuando alguien escribe <code>${escapeHtml(instance.prefix || '.')}menu</code>.</p>
+      <div class="style-grid">
+        <button class="style-card ${menuMode === 'text' ? 'is-selected' : ''}" type="button" data-action="set-menu-mode" data-mode="text"><h5>💬 Texto decorado</h5><p>El menú completo como mensaje de texto con el estilo elegido abajo.</p><span class="style-preview-badge">estilo: ${escapeHtml(draft.menuStyle)}</span>${menuMode === 'text' ? `<span style="position:absolute;top:10px;right:10px;color:var(--purple-bright);">${icon('check')}</span>` : ''}</button>
+        <button class="style-card ${menuMode === 'list' ? 'is-selected' : ''}" type="button" data-action="set-menu-mode" data-mode="list"><h5>📋 Lista interactiva</h5><p>Aparece la info del bot y debajo un botón para elegir la categoría (list message de WhatsApp).</p><span class="style-preview-badge">list message</span>${menuMode === 'list' ? `<span style="position:absolute;top:10px;right:10px;color:var(--purple-bright);">${icon('check')}</span>` : ''}</button>
+      </div>
+      ${menuMode === 'list' ? `<p class="field-hint" style="margin-top:8px;">En modo lista, al elegir una categoría el bot responde con esa sección en texto (usa el estilo de abajo). Si WhatsApp no muestra la lista, se envía el menú en texto automáticamente.</p>` : ''}
+    </div>`;
+    html += `<div class="edit-card"><h4>🖼️ Banner del menú</h4><p style="margin:6px 0 10px;color:var(--text-muted);font-size:11px;">Imagen que acompaña al menú: el bot la envía con <code>${escapeHtml(instance.prefix || '.')}menu</code> (con el menú de pie de foto si cabe, o junto al texto).</p>
+      ${bannerSrc ? `<div class="banner-preview"><img src="${escapeHtml(bannerSrc)}" alt="Banner del bot" /><div class="banner-preview-actions"><span class="alias-chip">${banner.dataUrl ? 'imagen subida' : 'URL externa'}</span><button class="btn btn-outline btn-small" type="button" data-action="remove-banner">${icon('close')} Quitar banner</button></div></div>` : `<p class="field-hint" style="margin-bottom:10px;">Sin banner todavía: pega una URL o sube una imagen (PNG, JPG o WebP, máx. 1 MB).</p>`}
+      <div class="banner-editor">
+        <label class="field" style="flex:2;min-width:200px;"><span class="field-label">URL de la imagen (https)</span><input class="text-input mono" id="banner-url-input" type="url" placeholder="https://ejemplo.com/banner.jpg" value="${escapeHtml(banner?.url || '')}" maxlength="500" /></label>
+        <button class="btn btn-primary btn-small" type="button" data-action="set-banner-url" style="align-self:flex-end;">${icon('check')} Usar URL</button>
+        <label class="field" style="flex:1;min-width:180px;"><span class="field-label">o subir desde tu dispositivo</span><input class="text-input" id="banner-upload" type="file" accept="image/png,image/jpeg,image/webp" /></label>
+      </div>
+    </div>`;
+    html += `<div class="edit-card"><h4>${icon('spark')} Elige el estilo del menú de texto</h4><p style="margin:6px 0;color:var(--text-muted);font-size:11px;">Se usa para el menú en modo texto y para el detalle de cada categoría. Previsualiza al instante.</p></div>`;
     html += `<div class="style-grid">${state.editStyles.map((s) => `<button class="style-card ${draft.menuStyle===s.id?'is-selected':''}" type="button" data-action="select-style" data-style="${escapeHtml(s.id)}"><h5>${escapeHtml(s.label)}</h5><p>${escapeHtml(s.description)}</p><span class="style-preview-badge">${escapeHtml(s.preview)}</span>${draft.menuStyle===s.id?`<span style="position:absolute;top:10px;right:10px;color:var(--purple-bright);">${icon('check')}</span>`:''}</button>`).join('')}</div>`;
     html += `<div class="edit-card"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><h4>${icon('code')} Vista previa · <span style="color:var(--purple-bright);">${escapeHtml(draft.menuStyle)}</span></h4><button class="btn btn-outline btn-small" type="button" data-action="refresh-preview">${icon('link')} Actualizar</button></div><pre class="menu-preview" id="menu-preview" style="margin-top:12px;">${escapeHtml(state.editPreview || 'Cargando vista previa…')}</pre><p class="field-hint">La vista previa usa tu config guardada. Guarda para ver cambios completos.</p></div>`;
     return html;
@@ -1506,25 +1536,27 @@ function renderEditModal() {
   setTimeout(() => { const el = document.getElementById('edit-command-search'); if (el) el.focus(); }, 40);
 }
 
-function renderCommandRow(c, draft, disabledSet) {
+function renderCommandRow(c, draft, disabledSet, catDisabledSet = new Set()) {
   const isDisabled = disabledSet.has(String(c.name).toLowerCase());
+  const catOff = catDisabledSet.has(String(c.category || '').toLowerCase());
+  const effectiveOff = isDisabled || catOff;
   const aliases = (() => {
     const extra = draft.aliases[String(c.name).toLowerCase()] || [];
     const all = [...(c.aliases||[]), ...extra];
     return all;
   })();
   const extraAliases = draft.aliases[String(c.name).toLowerCase()] || [];
-  return `<div class="toggle-row ${isDisabled ? 'is-disabled' : ''}" data-cmd="${escapeHtml(c.name)}">
+  return `<div class="toggle-row ${effectiveOff ? 'is-disabled' : ''}" data-cmd="${escapeHtml(c.name)}">
     <div class="toggle-row-main">
       <div style="display:grid;gap:2px;min-width:0;">
-        <strong style="font-family:var(--mono);font-size:12px;">${escapeHtml(c.name)} ${c.isCustom ? `<span style="padding:2px 6px;border-radius:99px;background:rgba(149,84,245,.15);color:var(--purple-bright);font-size:9px;">CUSTOM</span>` : ''} ${isDisabled ? `<span style="padding:2px 6px;border-radius:99px;background:rgba(255,89,97,.12);color:#ff8f96;font-size:9px;">OFF</span>` : ''}</strong>
+        <strong style="font-family:var(--mono);font-size:12px;">${escapeHtml(c.name)} ${c.isCustom ? `<span style="padding:2px 6px;border-radius:99px;background:rgba(149,84,245,.15);color:var(--purple-bright);font-size:9px;">CUSTOM</span>` : ''} ${isDisabled ? `<span style="padding:2px 6px;border-radius:99px;background:rgba(255,89,97,.12);color:#ff8f96;font-size:9px;">OFF</span>` : ''} ${!isDisabled && catOff ? `<span style="padding:2px 6px;border-radius:99px;background:rgba(255,196,84,.12);color:#ffc454;font-size:9px;">CATEGORÍA OFF</span>` : ''}</strong>
         <small>${escapeHtml(c.description || '')}</small>
         ${aliases.length ? `<div class="alias-chips">${aliases.map((a) => `<span class="alias-chip">${escapeHtml(a)} ${extraAliases.includes(a) ? `<button type="button" data-action="remove-alias" data-cmd="${escapeHtml(c.name)}" data-alias="${escapeHtml(a)}" aria-label="Quitar">${icon('close')}</button>` : ''}</span>`).join('')}</div>` : ''}
         ${c.args ? `<small style="font-family:var(--mono);color:var(--purple-bright);">${escapeHtml(c.args)}</small>` : ''}
       </div>
     </div>
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
-      <button class="toggle-switch ${!isDisabled ? 'is-on' : ''}" type="button" data-action="toggle-command" data-cmd="${escapeHtml(c.name)}" aria-label="${isDisabled ? 'Activar' : 'Desactivar'} ${escapeHtml(c.name)}" aria-pressed="${!isDisabled}"></button>
+      <button class="toggle-switch ${!isDisabled ? 'is-on' : ''}" type="button" data-action="toggle-command" data-cmd="${escapeHtml(c.name)}" aria-label="${isDisabled ? 'Activar' : 'Desactivar'} ${escapeHtml(c.name)}" aria-pressed="${!isDisabled}" ${catOff ? 'disabled title="La categoría completa está apagada: actívala en la cabecera del grupo"' : ''}></button>
       <div class="alias-add" style="margin:0;">
         <input class="text-input mono" style="min-height:32px;font-size:11px;max-width:110px;" placeholder="alias" data-alias-input="${escapeHtml(c.name)}" maxlength="24" />
         <button class="btn btn-outline btn-small" type="button" data-action="add-alias" data-cmd="${escapeHtml(c.name)}" style="min-height:32px;padding:0 8px;font-size:11px;">+Alias</button>
@@ -1942,6 +1974,42 @@ function handleClick(event) {
     else state.editDraft.disabled.push(cmd);
     renderEditModal();
   }
+  else if (action === 'toggle-menu-category') {
+    const cat = String(actionTarget.dataset.cat || '').toLowerCase();
+    if (!cat || !state.editDraft) return;
+    state.editDraft.disabledCategories = state.editDraft.disabledCategories || [];
+    if (state.editDraft.disabledCategories.includes(cat)) {
+      state.editDraft.disabledCategories = state.editDraft.disabledCategories.filter((c)=>c!==cat);
+      showToast(`Categoría "${cat}" activada`, 'success');
+    } else {
+      state.editDraft.disabledCategories.push(cat);
+      showToast(`Categoría "${cat}" quitada del menú y bloqueada`, 'info');
+    }
+    renderEditModal();
+  }
+  else if (action === 'set-menu-mode') {
+    if (!state.editDraft) return;
+    const mode = actionTarget.dataset.mode === 'list' ? 'list' : 'text';
+    state.editDraft.menuMode = mode;
+    renderEditModal();
+    showToast(mode === 'list' ? 'El menú se enviará como lista interactiva 📋' : 'El menú se enviará como texto decorado 💬', 'info');
+  }
+  else if (action === 'set-banner-url') {
+    if (!state.editDraft) return;
+    const input = document.getElementById('banner-url-input');
+    const url = input ? String(input.value || '').trim() : '';
+    if (!url) { showToast('Pega la URL de la imagen (https://…)', 'error'); return; }
+    if (!/^https?:\/\//i.test(url)) { showToast('La URL debe empezar por http:// o https://', 'error'); return; }
+    state.editDraft.banner = { url };
+    renderEditModal();
+    showToast('Banner por URL listo. Pulsa «Guardar todo» para aplicarlo.', 'success');
+  }
+  else if (action === 'remove-banner') {
+    if (!state.editDraft) return;
+    state.editDraft.banner = null;
+    renderEditModal();
+    showToast('Banner quitado. Pulsa «Guardar todo» para aplicarlo.', 'info');
+  }
   else if (action === 'add-alias') {
     const cmd = actionTarget.dataset.cmd;
     const input = document.getElementById('alias-input-' + cmd);
@@ -1987,10 +2055,11 @@ function handleClick(event) {
   else if (action === 'reset-commands') {
     if (!state.editDraft) return;
     state.editDraft.disabled = [];
+    state.editDraft.disabledCategories = [];
     state.editDraft.aliases = {};
     state.editDraft.categoryOverrides = {};
     renderEditModal();
-    showToast('Comandos restablecidos','info');
+    showToast('Comandos y categorías restablecidos','info');
   }
 }
 
@@ -2024,10 +2093,68 @@ function handleInput(event) {
 
 }
 
+/* Comprime/redimensiona la imagen del banner en el navegador antes de guardarla. */
+function downscaleImage(file, maxSide = 1080, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('El archivo no es una imagen válida'));
+      img.onload = () => {
+        const scale = Math.min(1, maxSide / Math.max(img.width || 1, img.height || 1));
+        const w = Math.max(1, Math.round((img.width || maxSide) * scale));
+        const h = Math.max(1, Math.round((img.height || maxSide) * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx2d = canvas.getContext('2d');
+        ctx2d.drawImage(img, 0, 0, w, h);
+        try {
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        } catch (error) {
+          reject(error);
+        }
+      };
+      img.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function processBannerFile(file) {
+  if (!state.editDraft) return;
+  if (!/^image\/(png|jpe?g|webp)$/i.test(file.type || '')) {
+    showToast('El banner debe ser PNG, JPG o WebP', 'error');
+    return;
+  }
+  try {
+    const dataUrl = file.size > 400 * 1024 ? await downscaleImage(file) : await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsDataURL(file);
+    });
+    if (!dataUrl || dataUrl.length > 1_380_000) {
+      showToast('La imagen pesa demasiado incluso comprimida; prueba con una más pequeña', 'error');
+      return;
+    }
+    state.editDraft.banner = { dataUrl };
+    renderEditModal();
+    showToast('Banner listo. Pulsa «Guardar todo» para aplicarlo.', 'success');
+  } catch (error) {
+    showToast(error.message || 'No se pudo procesar la imagen', 'error');
+  }
+}
+
 function handleChange(event) {
   const target = event.target;
   if (target.matches('[data-flow]')) {
     state.flow[target.dataset.flow] = target.value;
+  }
+  if (target.id === 'banner-upload' && target.files && target.files[0]) {
+    processBannerFile(target.files[0]);
+    target.value = '';
   }
   if (target.id === 'endpoint-category') {
     state.endpointCategory = target.value;

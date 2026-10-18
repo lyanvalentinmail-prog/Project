@@ -10,10 +10,22 @@ import { getDb } from '../connection.js';
 export const ALLOWED_MENU_STYLES = Object.freeze(['versova', 'minimal', 'elegant', 'cyber', 'compact', 'retro', 'raiden']);
 export const DEFAULT_MENU_STYLE = 'versova';
 
+/** Modos de entrega del menú: texto decorado o lista interactiva. */
+export const ALLOWED_MENU_MODES = Object.freeze(['text', 'list']);
+export const DEFAULT_MENU_MODE = 'text';
+
+/** Tipos MIME aceptados para el banner del menú (data URL o URL https). */
+export const BANNER_MIME_RE = /^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=\r\n]+$/;
+export const BANNER_MAX_DATAURL_CHARS = 1_400_000; // ≈ 1 MB de imagen binaria
+export const BANNER_MAX_URL_CHARS = 500;
+
 const DEFAULT_CUSTOM = Object.freeze({
   menuStyle: 'versova',
+  menuMode: 'text', // 'text' (estilos decorados) | 'list' (mensaje de lista interactiva)
+  banner: null, // { url | dataUrl, caption? } · imagen que acompaña al menú
   aliases: {}, // { reg: ["registrar2"] }
   disabled: [], // ["warn", "ban"]
+  disabledCategories: [], // ["anime", "logos"] · oculta y bloquea toda la categoría
   categories: [], // [{ id, title, icon, sub, kaomoji }]
   customCommands: [], // [{ name, category, description, response, permission, aliases, args, hidden }]
   categoryOverrides: {}, // { reg: "diversion" }
@@ -24,6 +36,32 @@ function isValidAliasName(name) {
 }
 function isValidCategoryId(id) {
   return /^[a-z0-9][a-z0-9_-]{1,19}$/i.test(String(id || '').trim());
+}
+
+/** Normaliza el modo de entrega del menú. */
+export function normalizeMenuMode(input, fallback = DEFAULT_MENU_MODE) {
+  const raw = String(input ?? '').trim().toLowerCase();
+  if (!raw) return { ok: true, value: fallback };
+  if (ALLOWED_MENU_MODES.includes(raw)) return { ok: true, value: raw };
+  return { ok: false, reason: `Modo de menú no válido. Elige entre: ${ALLOWED_MENU_MODES.join(', ')}` };
+}
+
+/**
+ * Normaliza el banner: { url } (https), { dataUrl } (imagen embebida)
+ * o null para quitarlo. Devuelve null si no es válido.
+ */
+export function normalizeBanner(input) {
+  if (!input || typeof input !== 'object') return null;
+  const caption = String(input.caption ?? '').trim().slice(0, 300);
+  const dataUrl = String(input.dataUrl ?? '').trim();
+  if (dataUrl) {
+    if (dataUrl.length > BANNER_MAX_DATAURL_CHARS || !BANNER_MIME_RE.test(dataUrl)) return null;
+    return { dataUrl: dataUrl.replace(/[\r\n]/g, ''), ...(caption ? { caption } : {}) };
+  }
+  const url = String(input.url ?? '').trim();
+  if (!url) return null;
+  if (url.length > BANNER_MAX_URL_CHARS || !/^https?:\/\//i.test(url)) return null;
+  return { url, ...(caption ? { caption } : {}) };
 }
 function isValidCommandName(name) {
   return /^[\p{L}ñ][\p{L}\p{N}_-]{0,24}$/u.test(String(name || '').toLowerCase());
@@ -48,8 +86,11 @@ export function parseCustomConfig(raw) {
   // merge with defaults
   const out = {
     menuStyle: typeof parsed.menuStyle === 'string' && ALLOWED_MENU_STYLES.includes(parsed.menuStyle) ? parsed.menuStyle : DEFAULT_MENU_STYLE,
+    menuMode: typeof parsed.menuMode === 'string' && ALLOWED_MENU_MODES.includes(parsed.menuMode) ? parsed.menuMode : DEFAULT_MENU_MODE,
+    banner: normalizeBanner(parsed.banner),
     aliases: {},
     disabled: [],
+    disabledCategories: [],
     categories: [],
     customCommands: [],
     categoryOverrides: {},
@@ -66,6 +107,10 @@ export function parseCustomConfig(raw) {
   // disabled: array of command names
   if (Array.isArray(parsed.disabled)) {
     out.disabled = [...new Set(parsed.disabled.map((c) => String(c).trim().toLowerCase()).filter((c) => c && isValidCommandName(c)))].slice(0, 100);
+  }
+  // disabledCategories: array of category ids cuyos comandos se ocultan/bloquean
+  if (Array.isArray(parsed.disabledCategories)) {
+    out.disabledCategories = [...new Set(parsed.disabledCategories.map((c) => String(c).trim().toLowerCase()).filter((c) => c && isValidCategoryId(c)))].slice(0, 20);
   }
   // categories
   if (Array.isArray(parsed.categories)) {
@@ -116,8 +161,24 @@ export function parseCustomConfig(raw) {
 }
 
 /** Valida un payload completo antes de guardar */
-export function validateCustomization(payload, { globalCommands = [] } = {}) {
+export function validateCustomization(payload, { globalCommands = [], globalCategories = [] } = {}) {
   const errors = [];
+  // Banner inválido = error explícito (no silenciar: el usuario subió algo)
+  if (payload?.banner && typeof payload.banner === 'object') {
+    const wantsBanner = String(payload.banner.url ?? payload.banner.dataUrl ?? '').trim();
+    if (wantsBanner && !normalizeBanner(payload.banner)) {
+      if (String(payload.banner.dataUrl ?? '').trim()) {
+        errors.push('El banner debe ser una imagen PNG, JPG o WebP de menos de 1 MB.');
+      } else {
+        errors.push('La URL del banner debe empezar por http:// o https:// y medir menos de 500 caracteres.');
+      }
+    }
+  }
+  // Modo de menú inválido = error explícito
+  if (payload?.menuMode != null && payload.menuMode !== '') {
+    const mode = normalizeMenuMode(payload.menuMode);
+    if (!mode.ok) errors.push(mode.reason);
+  }
   const data = parseCustomConfig(payload);
   // check aliases don't collide with global command names or custom commands
   const globalNames = new Set(globalCommands.map((c) => String(c.name).toLowerCase()));

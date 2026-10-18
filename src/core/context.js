@@ -12,6 +12,14 @@ import { chunkText } from '../utils/text.js';
 import { ensureGroup, invalidateGroupCache } from './group-sync.js';
 import { isLidJid, isPnJid, adminsFromMetadata } from '../utils/lid.js';
 import { renderResult, setRenderPrefix } from '../design/index.js';
+import { customRepo, normalizeBanner } from '../db/repositories/bot-customization.repo.js';
+import { fetchBuffer } from '../utils/net.js';
+import { scoped } from './logger.js';
+
+const log = scoped('context');
+
+/** Límite de caption de WhatsApp para mensajes con imagen/video. */
+const CAPTION_LIMIT = 1024;
 
 /* ═══════════════════════════════════════════════════════════════
    Lectura del mensaje de WhatsApp
@@ -217,6 +225,118 @@ export function resolveTarget(ctx, to) {
  * Envía texto (o un resultado de servicio) a un destino.
  * Parte automáticamente los mensajes largos.
  */
+/* ═══════════════════════════════════════════════════════════════
+   Medios: logos generados, stickers, miniaturas, banners…
+   Los servicios adjuntan `data.media` o `result.mediaExtra`;
+   este es el único lugar que los traduce a mensajes de WhatsApp.
+   ═══════════════════════════════════════════════════════════════ */
+
+/** Resuelve la fuente del medio: Buffer local, data URL o URL http. */
+export async function resolveMediaSource(media) {
+  if (!media || typeof media !== 'object') return null;
+  if (Buffer.isBuffer(media.buffer)) return media.buffer;
+  if (Buffer.isBuffer(media.image)) return media.image;
+  if (media.stickerBuffer && Buffer.isBuffer(media.stickerBuffer)) return media.stickerBuffer;
+  const dataUrl = media.dataUrl ?? (typeof media.image === 'string' && media.image.startsWith?.('data:') ? media.image : null);
+  if (dataUrl && typeof dataUrl === 'string' && dataUrl.startsWith('data:')) {
+    const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+    try { return Buffer.from(base64, 'base64'); } catch { return null; }
+  }
+  const url = media.url ?? (typeof media.image === 'string' && /^https?:\/\//.test(media.image) ? media.image : null);
+  if (url) {
+    const buffer = await fetchBuffer(url, { maxBytes: media.maxBytes ?? 16 * 1024 * 1024, timeout: media.timeout ?? 12_000 });
+    return buffer;
+  }
+  return null;
+}
+
+/** Convierte la descripción de un medio en contenido Baileys, o null. */
+export async function mediaContent(media, captionText = '') {
+  if (!media || typeof media !== 'object') return null;
+  const kind = media.kind ?? (media.sticker ? 'sticker' : media.audio ? 'audio' : media.video ? 'video' : 'image');
+  const caption = captionText ? String(captionText).slice(0, CAPTION_LIMIT) : undefined;
+  if (kind === 'sticker') {
+    const buffer = await resolveMediaSource(media);
+    return buffer ? { sticker: buffer } : null;
+  }
+  if (kind === 'audio') {
+    if (media.url && !Buffer.isBuffer(media.buffer)) {
+      return { audio: { url: media.url }, mimetype: media.mimetype ?? 'audio/mpeg', ...(media.ptt ? { ptt: true } : {}) };
+    }
+    const buffer = await resolveMediaSource(media);
+    return buffer ? { audio: buffer, mimetype: media.mimetype ?? 'audio/mpeg', ...(media.ptt ? { ptt: true } : {}) } : null;
+  }
+  if (kind === 'video') {
+    if (media.url && !Buffer.isBuffer(media.buffer)) {
+      return { video: { url: media.url }, caption, mimetype: media.mimetype ?? 'video/mp4' };
+    }
+    const buffer = await resolveMediaSource(media);
+    return buffer ? { video: buffer, caption, mimetype: media.mimetype ?? 'video/mp4' } : null;
+  }
+  // imagen por defecto
+  if (media.url && !Buffer.isBuffer(media.buffer)) {
+    return { image: { url: media.url }, ...(caption ? { caption } : {}) };
+  }
+  const buffer = await resolveMediaSource(media);
+  return buffer ? { image: buffer, ...(caption ? { caption } : {}) } : null;
+}
+
+/**
+ * Menú enriquecido por sub-bot: lista interactiva o banner con imagen.
+ * Devuelve el mensaje enviado, o null si no aplica (→ texto plano).
+ */
+async function sendMenuRich(ctx, payload, text, target, quoted) {
+  if (payload?.view !== 'menu.main' || !ctx?.instance?.id) return null;
+  // `.menu <categoría>` filtrada siempre va en texto (es una ficha)
+  if (payload?.data?.filter) return null;
+  let custom = null;
+  try { custom = customRepo.get(ctx.instance.id); } catch { return null; }
+
+  // 1) modo lista: info del bot + selector de categorías
+  if (custom.menuMode === 'list' && typeof ctx.client?.sendList === 'function') {
+    try {
+      const { buildMenuData, buildListPayload } = await import('../services/menu.service.js');
+      const data = buildMenuData(ctx.instance, ctx.prefix ?? ctx.instance.prefix ?? '.');
+      const list = buildListPayload(data, { userName: ctx.author?.name ?? null });
+      const sent = await ctx.client.sendList(target, list, { quoted: quoted ?? undefined });
+      if (sent) return sent;
+    } catch (error) {
+      log.warn({ err: error }, 'menú en modo lista falló; se envía en texto');
+    }
+  }
+
+  // 2) banner: imagen configurada en el panel + menú
+  const banner = normalizeBanner(custom.banner);
+  if (banner) {
+    try {
+      const buffer = await resolveMediaSource(banner);
+      if (!buffer) throw new Error('sin imagen de banner');
+      const header = banner.caption ||
+        `ㅤㅤ𓆩ㅤ禊ㅤ𓆪\n` +
+        `ㅤ𝑽 𝑬́ 𝑹 𝑺 𝑶 𝑽 𝑨ㅤ·ㅤ${payload?.data?.name ?? 'Bot'}\n` +
+        `𖦹 𝖳𝖾𝖺𝗆 ⁙ ${payload?.data?.team ?? ''}\n` +
+        `𖦹 𝖯𝗋𝖾𝖿𝗂𝗑 ⁙ ${payload?.data?.prefix ?? ctx.prefix ?? '.'}\n` +
+        `𖦹 𝖲𝗍𝖺𝗍𝗎𝗌 ⁙ ${payload?.data?.status ?? 'ᴏɴʟɪɴᴇ'} · 𝖵𝖾𝗋𝗌𝗂𝗈𝗇 ⁙ ${payload?.data?.version ?? ''}`;
+      const fitsCaption = String(text).length <= CAPTION_LIMIT;
+      const content = { image: buffer, caption: fitsCaption ? text : header };
+      const sent = await ctx.client.sendMessage(target, content, quoted ? { quoted } : {});
+      // si el menú no cabe en el caption, el texto completo va debajo
+      if (!fitsCaption) {
+        const rest = [];
+        for (const chunk of chunkText(text)) {
+          const r = await ctx.client.sendMessage(target, { text: chunk });
+          if (r) rest.push(r);
+        }
+        void rest;
+      }
+      return sent ?? true;
+    } catch (error) {
+      log.warn({ err: error }, 'banner del menú falló; se envía en texto');
+    }
+  }
+  return null;
+}
+
 export async function sendMessage(ctx, to, payload, options = {}) {
   // cada sub-bot puede tener su propio prefijo: se fija antes de renderizar
   setRenderPrefix(ctx?.instance?.prefix ?? ctx?.prefix);
@@ -226,6 +346,34 @@ export async function sendMessage(ctx, to, payload, options = {}) {
   const target = resolveTarget(ctx, to);
   const mentions = [...new Set([...(options.mentions ?? []), ...(payload?.data?.mentions ?? [])].map(normalizeJid).filter(Boolean))];
   const quoted = options.quoted === false ? null : options.quotedMessage ?? (to === 'reply' ? ctx.raw : null);
+
+  // 1 · entrega rica del menú (lista interactiva / banner del bot)
+  if (!Array.isArray(payload) && typeof payload !== 'string') {
+    const rich = await sendMenuRich(ctx, payload, text, target, quoted);
+    if (rich) return rich === true ? null : rich;
+
+    // 2 · medio adjunto en data.media (logo generado, miniatura, audio…)
+    if (payload?.data?.media) {
+      const media = payload.data.media;
+      const kind = media.kind ?? 'image';
+      if (kind === 'sticker') {
+        // el sticker no lleva caption: primero el texto, luego el sticker
+        for (const chunk of chunkText(text)) {
+          const content = { text: chunk };
+          if (mentions.length) content.mentions = mentions;
+          await ctx.client.sendMessage(target, content, quoted ? { quoted } : {});
+        }
+        const stickerContent = await mediaContent(media, '');
+        if (!stickerContent) return null;
+        return ctx.client.sendMessage(target, stickerContent, quoted ? { quoted } : {});
+      }
+      const content = await mediaContent(media, text);
+      if (content) {
+        return ctx.client.sendMessage(target, content, quoted ? { quoted } : {});
+      }
+      // sin medio resoluble → cae a texto normal
+    }
+  }
 
   const sent = [];
   for (const chunk of chunkText(text)) {
@@ -259,6 +407,18 @@ export async function applyResult(ctx, result) {
     });
     if (extra.linkRequest && sentExtra?.key?.id) {
       requestsRepo.setWaMessageId(extra.linkRequest, sentExtra.key.id);
+    }
+  }
+
+  // archivos de medios adicionales (stickers encontrados, imágenes, audio…)
+  for (const item of result.mediaExtra ?? []) {
+    try {
+      const content = await mediaContent(item, item.caption ?? '');
+      if (!content) continue;
+      const target = resolveTarget(ctx, item.to ?? 'reply');
+      await ctx.client.sendMessage(target, content);
+    } catch (error) {
+      log.warn({ err: error }, 'no se pudo enviar un medio extra');
     }
   }
 
