@@ -55,6 +55,32 @@ const IGNORED_TYPES = [
   'callLogMessage',
 ];
 
+/**
+ * Id elegido en una respuesta interactiva (lista / botones / native flow).
+ * Al tocar una fila de la lista del menú, WhatsApp NO manda texto: manda
+ * un `interactiveResponseMessage` cuyo `paramsJson` trae `{ id }` (el id de
+ * la fila, p. ej. `.menu economy`). Sin esto la selección se perdía.
+ */
+export function extractInteractiveId(m) {
+  if (!m) return '';
+  const nativeFlow = m.interactiveResponseMessage?.nativeFlowResponseMessage;
+  if (nativeFlow?.paramsJson) {
+    try {
+      const params = JSON.parse(nativeFlow.paramsJson);
+      const id = params?.id ?? params?.selectedId ?? params?.row_id ?? null;
+      if (id) return String(id);
+    } catch {
+      /* paramsJson no es JSON: se ignora */
+    }
+  }
+  return String(
+    m.listResponseMessage?.singleSelectReply?.selectedRowId ??
+    m.buttonsResponseMessage?.selectedButtonId ??
+    m.templateButtonReplyMessage?.selectedId ??
+    ''
+  );
+}
+
 export function extractText(m) {
   if (!m) return '';
   const text =
@@ -64,8 +90,13 @@ export function extractText(m) {
     m.videoMessage?.caption ??
     m.documentMessage?.caption ??
     m.locationMessage?.name ??
-    '';
-  return String(text ?? '');
+    null;
+  if (text) return String(text);
+  return extractInteractiveId(m) || String(
+    m.interactiveResponseMessage?.body?.text ??
+    m.listResponseMessage?.title ??
+    ''
+  );
 }
 
 export function extractMentions(m) {

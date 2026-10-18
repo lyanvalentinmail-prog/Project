@@ -65,6 +65,7 @@ export const statsRepo = {
       'command_stats',
       'web_tickets',
       'web_users',
+      'api_keys',
       'audit_log',
     ];
     const out = {};

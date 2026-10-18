@@ -35,6 +35,8 @@ import { maskPhone } from '../src/utils/ids.js';
 import { formatDuration } from '../src/utils/time.js';
 import { createEndpointsRouter } from './api/index.js';
 import { createCreditsRouter } from './api/credits.js';
+import { createAccountsRouter } from './api/accounts.js';
+import { createV1Router } from './api/v1.js';
 
 /** Formatea el código de emparejamiento como XXXX-XXXX. */
 export const formatPairingCode = (code) =>
@@ -180,6 +182,9 @@ export function createRouter({ manager, auth }) {
   // Montar sub-routers de API y créditos (públicos)
   router.use('/endpoints', createEndpointsRouter());
   router.use('/credits', createCreditsRouter());
+  // cuentas web (login/registro/API keys) y API funcional con API key
+  router.use('/account', createAccountsRouter());
+  router.use('/v1', createV1Router({ manager }));
 
   /* ── protegidas (requieren auth solo si hay password) ────── */
 

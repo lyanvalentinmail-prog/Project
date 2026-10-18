@@ -147,6 +147,7 @@ export function buildListPayload(data, { userName = null } = {}) {
     `𖦹 𝖵𝖾𝗋𝗌𝗂𝗈𝗇 ⁙ ${data.version}`,
     '',
     'Toca el botón y elige una categoría del menú.',
+    `✎ ¿No ves el botón? Escribe ${prefix}menu <categoría> o ${prefix}help`,
   ].filter(Boolean).join('\n');
 
   const rows = [

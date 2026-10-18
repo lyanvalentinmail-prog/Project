@@ -133,6 +133,18 @@ const MIGRATIONS = [
       }
     },
   },
+  {
+    version: 8,
+    name: 'cuentas web: roles, sesiones, API keys con caducidad y uso de la API',
+    up(database) {
+      const cols = database.prepare('PRAGMA table_info(web_users)').all().map((r) => r.name);
+      if (!cols.includes('role')) {
+        database.exec("ALTER TABLE web_users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'");
+      }
+      const schema = fs.readFileSync(path.join(here, 'schema-v8.sql'), 'utf8');
+      database.exec(schema);
+    },
+  },
 ];
 
 /** Devuelve la conexión activa (la crea si aún no existe). */

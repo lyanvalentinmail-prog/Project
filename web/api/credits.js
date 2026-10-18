@@ -6,89 +6,30 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import { getDb } from '../../src/db/index.js';
+import { createAccount, authenticate, publicUser, createSession, requireOwner } from './accounts.js';
 
 const now = () => Date.now();
-
-/** Genera un API key única. */
-function generateApiKey() {
-  return `sw_${crypto.randomBytes(24).toString('hex')}`;
-}
-
-/** Hash simple para contraseñas (SHA-256 con salt). */
-function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.createHash('sha256').update(salt + password).digest('hex');
-  return `${salt}:${hash}`;
-}
-
-function verifyPassword(password, stored) {
-  const [salt, hash] = stored.split(':');
-  const check = crypto.createHash('sha256').update(salt + password).digest('hex');
-  return check === hash;
-}
 
 export function createCreditsRouter() {
   const router = express.Router();
 
-  // ── Registro de usuario web ─────────────────────────────────
+  // ── Registro / login: delegan en las cuentas web (/api/account) ──
   router.post('/register', (req, res) => {
-    const { email, username, password } = req.body ?? {};
-    if (!email || !username || !password) {
-      return res.status(400).json({ ok: false, error: 'Email, usuario y contraseña son requeridos.' });
-    }
-    if (password.length < 6) {
-      return res.status(400).json({ ok: false, error: 'La contraseña debe tener al menos 6 caracteres.' });
-    }
-
-    const existing = getDb().prepare('SELECT id FROM web_users WHERE email = ?').get(email);
-    if (existing) {
-      return res.status(409).json({ ok: false, error: 'Este email ya está registrado.' });
-    }
-
-    const id = crypto.randomUUID();
-    const apiKey = generateApiKey();
-    const passwordHash = hashPassword(password);
-    const ts = now();
-
-    getDb().prepare(`
-      INSERT INTO web_users (id, email, username, password_hash, credits, plan, api_key, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 50, 'free', ?, ?, ?)
-    `).run(id, email, username, passwordHash, apiKey, ts, ts);
-
-    // Créditos de bienvenida
-    getDb().prepare(`
-      INSERT INTO credit_transactions (user_id, type, amount, balance, description, created_at)
-      VALUES (?, 'bonus', 50, 50, 'Créditos de bienvenida', ?)
-    `).run(id, ts);
-
-    return res.json({ ok: true, user: { id, email, username, credits: 50, plan: 'free', apiKey } });
+    const result = createAccount(req.body ?? {});
+    if (result.error) return res.status(result.status).json({ ok: false, error: result.error });
+    const session = createSession(result.user.id, req.get('user-agent'));
+    return res.json({ ok: true, token: session.token, expiresAt: session.expiresAt, user: publicUser(result.user) });
   });
 
-  // ── Login de usuario web ────────────────────────────────────
   router.post('/login', (req, res) => {
     const { email, password } = req.body ?? {};
     if (!email || !password) {
       return res.status(400).json({ ok: false, error: 'Email y contraseña son requeridos.' });
     }
-
-    const user = getDb().prepare('SELECT * FROM web_users WHERE email = ?').get(email);
-    if (!user || !verifyPassword(password, user.password_hash)) {
-      return res.status(401).json({ ok: false, error: 'Credenciales incorrectas.' });
-    }
-
-    getDb().prepare('UPDATE web_users SET last_login_at = ? WHERE id = ?').run(now(), user.id);
-
-    return res.json({
-      ok: true,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        credits: user.credits,
-        plan: user.plan,
-        apiKey: user.api_key,
-      },
-    });
+    const user = authenticate(email, password);
+    if (!user) return res.status(401).json({ ok: false, error: 'Credenciales incorrectas.' });
+    const session = createSession(user.id, req.get('user-agent'));
+    return res.json({ ok: true, token: session.token, expiresAt: session.expiresAt, user: publicUser(user) });
   });
 
   // ── Info de usuario (por API key) ───────────────────────────
@@ -229,7 +170,7 @@ export function createCreditsRouter() {
   });
 
   // ── Admin: crear cupón ──────────────────────────────────────
-  router.post('/admin/coupons', (req, res) => {
+  router.post('/admin/coupons', requireOwner, (req, res) => {
     const { credits, maxUses = 1, expiresInDays = 30, code: customCode } = req.body ?? {};
     if (!credits || credits < 1) {
       return res.status(400).json({ ok: false, error: 'Créditos del cupón requeridos.' });

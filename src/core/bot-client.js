@@ -72,6 +72,62 @@ async function resolveVersion() {
   return cachedVersion.version;
 }
 
+/**
+ * Contenido del menú de lista (native flow `single_select`).
+ * `messageContextInfo.deviceListMetadata` es obligatorio dentro del
+ * viewOnce: sin él varios clientes muestran «mensaje no compatible».
+ */
+export function buildListContent(list, sections) {
+  const interactiveMessage = proto.Message.InteractiveMessage.create({
+    body: proto.Message.InteractiveMessage.Body.create({ text: String(list.body ?? '') }),
+    footer: proto.Message.InteractiveMessage.Footer.create({ text: String(list.footer ?? '') }),
+    header: proto.Message.InteractiveMessage.Header.create({
+      title: String(list.title ?? '').slice(0, 60),
+      subtitle: '',
+      hasMediaAttachment: false,
+    }),
+    nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
+      buttons: [{
+        name: 'single_select',
+        buttonParamsJson: JSON.stringify({
+          title: String(list.buttonText ?? 'Ver opciones').slice(0, 40),
+          sections,
+        }),
+      }],
+      messageParamsJson: '',
+      messageVersion: 1,
+    }),
+  });
+  return {
+    viewOnceMessage: {
+      message: {
+        messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 },
+        interactiveMessage,
+      },
+    },
+  };
+}
+
+/**
+ * Nodos extra de la stanza para mensajes interactivos. WhatsApp solo
+ * renderiza los `native_flow` si la stanza lleva el nodo `<biz>`; Baileys
+ * oficial no lo añade, y por eso la lista llegaba vacía o no aparecía.
+ * En chats privados se añade además `<bot biz_bot="1"/>`.
+ */
+export function interactiveNodes(target) {
+  const nodes = [{
+    tag: 'biz',
+    attrs: {},
+    content: [{
+      tag: 'interactive',
+      attrs: { type: 'native_flow', v: '1' },
+      content: [{ tag: 'native_flow', attrs: { v: '9', name: 'mixed' } }],
+    }],
+  }];
+  if (!isGroupJid(target)) nodes.push({ tag: 'bot', attrs: { biz_bot: '1' } });
+  return nodes;
+}
+
 export class BotClient extends EventEmitter {
   /**
    * @param {object} instance fila de bot_instances
@@ -573,30 +629,12 @@ export class BotClient extends EventEmitter {
     if (!sections.length) return null;
 
     const task = this._sendQueue.then(async () => {
-      const interactive = proto.Message.InteractiveMessage.create({
-        body: proto.Message.InteractiveMessage.Body.create({ text: String(list.body ?? '') }),
-        footer: proto.Message.InteractiveMessage.Footer.create({ text: String(list.footer ?? '') }),
-        header: proto.Message.InteractiveMessage.Header.create({
-          title: String(list.title ?? '').slice(0, 60),
-          subtitle: '',
-          hasMediaAttachment: false,
-        }),
-        nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
-          buttons: [{
-            name: 'single_select',
-            buttonParamsJson: JSON.stringify({
-              title: String(list.buttonText ?? 'Ver opciones').slice(0, 40),
-              sections,
-            }),
-          }],
-          messageParamsJson: JSON.stringify({ limited_time_offer: {}, bottom_sheet: { in_thread_buttons_limit: 1 } }),
-        }),
-        contextInfo: { forwardingScore: 1, isForwarded: true },
+      if (!this.sock || this.status !== 'open') throw Object.assign(new Error('El bot no está conectado.'), { code: 'NOT_CONNECTED' });
+      const message = generateWAMessageFromContent(target, buildListContent(list, sections), { quoted: options.quoted, userJid: this.jid });
+      await this.sock.relayMessage(target, message.message, {
+        messageId: message.key.id,
+        additionalNodes: interactiveNodes(target),
       });
-      const message = generateWAMessageFromContent(target, {
-        viewOnceMessage: { message: { interactiveMessage: interactive } },
-      }, { quoted: options.quoted, userJid: this.jid });
-      await this.sock.relayMessage(target, message.message, { messageId: message.key.id });
       this._rememberMessage({ ...message.key, fromMe: true });
       await sleep(350);
       return message;

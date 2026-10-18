@@ -76,6 +76,12 @@ export const env = Object.freeze({
       .filter((n) => n.length >= 6)
   ),
 
+  // owner de las cuentas web (panel de endpoints / API keys)
+  ownerEmail: str(process.env.OWNER_EMAIL, 'lyanvalentinmail@gmail.com').toLowerCase(),
+  // opcional: si se define, la cuenta del owner se crea sola al arrancar
+  // con esta contraseña (nadie más puede registrarse con ese correo)
+  ownerPassword: str(process.env.OWNER_PASSWORD, ''),
+
   // web
   webHost: str(process.env.WEB_HOST, '0.0.0.0'),
   webPort: int(process.env.PORT || process.env.WEB_PORT, 3000, 1, 65535),
