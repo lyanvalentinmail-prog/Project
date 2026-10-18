@@ -138,6 +138,8 @@ export const VIEWS = {
 
   // stickers (paquete Raiden)
   'sticker.guide': E.stickerGuide,
+  'sticker.created': E.stickerCreated,
+  'sticker.pack.created': E.stickerPackCreated,
   'sticker.brat': E.stickerBrat,
   'sticker.meta': E.stickerMeta,
   'sticker.search': E.stickerSearch,

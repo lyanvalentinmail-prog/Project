@@ -288,10 +288,13 @@ Caducan a los **60 segundos**. También piden confirmación: `.liberar`, `.termi
 
 | Comando | Permiso | Qué hace |
 |---|---|---|
-| `.s` `[pack \| autor]` | todos | Crea un sticker desde la imagen, video o sticker citado, con metadatos opcionales.<br />Ejemplo: `.s mi pack \| yo`<br />Alias: `.sticker` `.stiker` `.wm`<br />📩 También funciona por privado. |
-| `.setmeta` `<pack \| autor>` | todos | Guarda tus metadatos predeterminados de nombre de pack y autor para tus stickers.<br />Ejemplo: `.setmeta mi pack \| yo`<br />Alias: `.sm` `.setpack` `.mimetadatos`<br />📩 También funciona por privado. |
-| `.delmeta` | todos | Elimina tus metadatos de stickers guardados.<br />Ejemplo: `.delmeta`<br />Alias: `.dm` `.delpack`<br />📩 También funciona por privado. |
-| `.brat` `<texto>` | todos | Genera un sticker tipo "brat" con el texto que escribas.<br />Ejemplo: `.brat hola mundo`<br />Alias: `.bratv` `.bratty`<br />📩 También funciona por privado. |
+| `.s` `[pack \| autor]` | todos | Convierte una imagen adjunta o citada en un sticker WebP y lo envía al chat.<br />Ejemplo: `.s (con una imagen adjunta o citada; también puedes responder a ella)`<br />Alias: `.sticker` `.stiker` `.wm`<br />📩 También funciona por privado. |
+| `.spack` `<nombre del pack>` | todos | Crea y envía un sticker por cada foto del álbum al que respondas; el autor es el nombre del bot.<br />Ejemplo: `.spack Mis fotos`<br />📩 También funciona por privado. |
+| `.setmeta` `<pack \| autor>` | todos | Guarda por grupo tus metadatos predeterminados de nombre de pack y autor para tus stickers.<br />Ejemplo: `.setmeta mi pack \| yo`<br />Alias: `.sm` `.setpack` `.mimetadatos` |
+| `.delmeta` | todos | Elimina tus metadatos de stickers guardados.<br />Ejemplo: `.delmeta`<br />Alias: `.dm` `.delpack` |
+| `.brat` `<texto>` | todos | Genera y envía un sticker WebP tipo BRAT con el texto que escribas.<br />Ejemplo: `.brat hola mundo`<br />Alias: `.bratv` `.bratty`<br />📩 También funciona por privado. |
+| `.attp` `<texto>` | todos | Genera y envía un sticker WebP animado con texto de colores.<br />Ejemplo: `.attp hola mundo`<br />📩 También funciona por privado. |
+| `.ttp` `<texto>` | todos | Genera y envía un sticker WebP con texto y contorno.<br />Ejemplo: `.ttp hola mundo`<br />📩 También funciona por privado. |
 | `.ssearch` `<búsqueda>` | todos | Busca paquetes de stickers por palabra clave en Sticker.ly.<br />Ejemplo: `.ssearch gatos`<br />Alias: `.stickerly` `.stickers` `.buscarsticker` `.ss`<br />📩 También funciona por privado. |
 
 ## 𓆩 💐 𓆪 ⑫ HERRAMIENTAS

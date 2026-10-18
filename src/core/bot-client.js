@@ -25,13 +25,14 @@ import {
   isJidNewsletter,
   jidNormalizedUser,
   generateWAMessageFromContent,
+  downloadMediaMessage,
   proto,
 } from '@whiskeysockets/baileys';
 
 import { env } from '../config/env.js';
 import { IDENTITY } from '../config/identity.js';
 import { baileysLogger, scoped } from './logger.js';
-import { createContext } from './context.js';
+import { createContext, unwrapMessage } from './context.js';
 import { handleCommandMessage, parseCommand } from './router.js';
 import * as events from './events.js';
 import { instancesRepo, statsRepo } from '../db/index.js';
@@ -48,6 +49,10 @@ const log = scoped('client');
 const FALLBACK_VERSION = null;
 const VERSION_LOOKUP_TIMEOUT_MS = 8000;
 let cachedVersion = null;
+
+const ALBUM_IMAGE_CACHE_TTL_MS = 10 * 60_000;
+const MAX_CACHED_ALBUMS = 64;
+const MAX_CACHED_ALBUM_IMAGES = 31;
 
 /** Última versión de WhatsApp Web publicada por Baileys (o null → la incluida). */
 async function resolveVersion() {
@@ -174,6 +179,8 @@ export class BotClient extends EventEmitter {
     this._startAttempt = 0;
     // También deduplica notify/append y los ecos de nuestros propios envíos.
     this._seenMessages = new Map();
+    /** Imágenes recientes agrupadas por la clave padre de álbum de WhatsApp. */
+    this._albumImages = new Map();
     this._logger = baileysLogger(`wa:${this.id}`);
   }
 
@@ -540,6 +547,7 @@ export class BotClient extends EventEmitter {
       if (!Number.isFinite(timestamp) || age < -30_000 || age > 120_000) return;
     }
     if (!this._rememberMessage(raw.key)) return;
+    this._rememberAlbumMedia(raw);
     this.lids.learnKey(raw.key);
 
     statsRepo.bump('messages');
@@ -571,7 +579,98 @@ export class BotClient extends EventEmitter {
     return true;
   }
 
+  /** Guarda medios de álbum durante un período corto para responder luego con .spack. */
+  _rememberAlbumMedia(raw) {
+    const content = unwrapMessage(raw);
+    const association = content?.messageContextInfo?.messageAssociation;
+    if (Number(association?.associationType) !== proto.MessageAssociation.AssociationType.MEDIA_ALBUM || !content?.imageMessage) return;
+
+    const parentId = String(association.parentMessageKey?.id ?? '');
+    const chatJid = normalizeJid(raw.key?.remoteJid);
+    const messageId = String(raw.key?.id ?? '');
+    if (!parentId || !chatJid || !messageId) return;
+
+    const now = Date.now();
+    this._pruneAlbumImageCache(now);
+    const cacheKey = JSON.stringify([chatJid, parentId]);
+    const album = this._albumImages.get(cacheKey) ?? {
+      createdAt: now,
+      updatedAt: now,
+      items: new Map(),
+    };
+    album.updatedAt = now;
+    const rawIndex = Number(association.messageIndex);
+    album.items.set(messageId, {
+      message: raw,
+      index: Number.isSafeInteger(rawIndex) && rawIndex >= 0 ? rawIndex : album.items.size,
+      receivedAt: now,
+    });
+    while (album.items.size > MAX_CACHED_ALBUM_IMAGES) {
+      album.items.delete(album.items.keys().next().value);
+    }
+    this._albumImages.set(cacheKey, album);
+    this._pruneAlbumImageCache(now);
+  }
+
+  _pruneAlbumImageCache(now = Date.now()) {
+    for (const [key, album] of this._albumImages) {
+      if (now - album.updatedAt > ALBUM_IMAGE_CACHE_TTL_MS) this._albumImages.delete(key);
+    }
+    while (this._albumImages.size > MAX_CACHED_ALBUMS) {
+      this._albumImages.delete(this._albumImages.keys().next().value);
+    }
+  }
+
+  /** Devuelve las fotos de un álbum en el orden informado por Baileys. */
+  getAlbumImages(chatJid, parentId) {
+    if (!chatJid || !parentId) return [];
+    this._pruneAlbumImageCache();
+    const key = JSON.stringify([normalizeJid(chatJid), String(parentId)]);
+    const album = this._albumImages.get(key);
+    if (!album) return [];
+    return [...album.items.values()]
+      .sort((left, right) => left.index - right.index || left.receivedAt - right.receivedAt)
+      .map((entry) => entry.message);
+  }
+
   /* ── API usada por el resto del bot ─────────────────────────── */
+
+  /** Descarga un medio recibido y limita el tamaño en memoria. */
+  async downloadMediaBuffer(message, { maxBytes = 15 * 1024 * 1024 } = {}) {
+    const socket = this.sock;
+    if (!socket) throw new Error('El bot no está conectado.');
+
+    const stream = await downloadMediaMessage(message, 'stream', {}, {
+      reuploadRequest: (mediaMessage) => {
+        if (typeof socket.updateMediaMessage !== 'function') {
+          throw new Error('Baileys no puede volver a solicitar este medio.');
+        }
+        return socket.updateMediaMessage(mediaMessage);
+      },
+      logger: this._logger,
+    });
+    const chunks = [];
+    let totalBytes = 0;
+
+    try {
+      for await (const chunk of stream) {
+        const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        totalBytes += data.length;
+        if (totalBytes > maxBytes) {
+          stream.destroy();
+          const error = new Error(`El medio supera el límite de ${maxBytes} bytes.`);
+          error.code = 'MEDIA_TOO_LARGE';
+          throw error;
+        }
+        chunks.push(data);
+      }
+    } catch (error) {
+      stream.destroy();
+      throw error;
+    }
+
+    return Buffer.concat(chunks, totalBytes);
+  }
 
   /** Envío serializado con reintento y pausa anti-flood. */
   async sendMessage(jid, content, options = {}) {

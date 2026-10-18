@@ -1,17 +1,162 @@
 /**
  * 𓆩 ⭐ 𓆪  VÉRSOVA · servicio de stickers (paquete Raiden)
  * ────────────────────────────────────────────────────────────────
- * Metadatos por defecto (pack/autor) + guías de uso. El bot envía
- * texto: los pasos para crear el sticker se explican con el estilo
- * de VÉRSOVA y los metadatos guardados.
+ * Descarga imágenes adjuntas o citadas, las convierte a WebP compatible
+ * y envía el sticker. Conserva metadatos opcionales de pack y autor.
  */
 import { stickerMetaRepo } from '../db/index.js';
 import { ok, fail } from './result.js';
 import { sanitizeText } from '../utils/text.js';
 import { fetchJson, fetchBuffer } from '../utils/net.js';
+import { IDENTITY } from '../config/identity.js';
+import {
+  imageToSticker,
+  textToSticker,
+  MAX_STICKER_INPUT_BYTES,
+  StickerImageError,
+} from './sticker-image.js';
+
+const MAX_STICKERS_PER_PACK = 30;
 
 function currentMeta(ctx) {
-  return stickerMetaRepo.get(ctx.group.groupId, ctx.author.jid) ?? { pack: '', author: '' };
+  const groupId = ctx.group?.groupId;
+  if (!groupId) return { pack: '', author: '' };
+  return stickerMetaRepo.get(groupId, ctx.author.jid) ?? { pack: '', author: '' };
+}
+
+function parseStickerMeta(raw, defaults = {}) {
+  const text = sanitizeText(raw, 130);
+  const meta = { pack: defaults.pack ?? '', author: defaults.author ?? '' };
+  if (!text) return meta;
+  if (/[|/•]/.test(text)) {
+    const [pack = '', author = ''] = text.split(/[|/•]/);
+    if (pack.trim()) meta.pack = pack.trim();
+    if (author.trim()) meta.author = author.trim();
+  } else {
+    meta.pack = text;
+  }
+  return {
+    pack: meta.pack.slice(0, 60),
+    author: meta.author.slice(0, 60),
+  };
+}
+
+function unwrappedContent(message) {
+  let content = message?.message ?? message;
+  for (let depth = 0; depth < 10; depth += 1) {
+    const inner = content?.ephemeralMessage?.message ?? content?.viewOnceMessage?.message ??
+      content?.viewOnceMessageV2?.message ?? content?.viewOnceMessageV2Extension?.message ??
+      content?.documentWithCaptionMessage?.message;
+    if (!inner) break;
+    content = inner;
+  }
+  return content ?? null;
+}
+
+function mediaCandidate(content) {
+  if (!content || typeof content !== 'object') return null;
+  if (content.imageMessage) return { type: 'image', media: content.imageMessage };
+  if (content.stickerMessage) return { type: 'image', media: content.stickerMessage };
+  if (content.videoMessage) return { type: 'video', media: content.videoMessage };
+  if (content.documentMessage) {
+    const document = content.documentMessage;
+    if (String(document.mimetype ?? '').toLowerCase().startsWith('image/')) {
+      return { type: 'image', media: document };
+    }
+    if (String(document.mimetype ?? '').toLowerCase().startsWith('video/')) {
+      return { type: 'video', media: document };
+    }
+  }
+  return null;
+}
+
+function contextInfo(content) {
+  for (const value of Object.values(content ?? {})) {
+    if (value?.contextInfo?.quotedMessage) return value.contextInfo;
+  }
+  return null;
+}
+
+function quotedWAMessage(ctx, info) {
+  return {
+    key: {
+      remoteJid: info.remoteJid ?? ctx.chatJid,
+      fromMe: Boolean(info.fromMe),
+      id: info.stanzaId ?? undefined,
+      participant: info.participant ?? undefined,
+    },
+    message: info.quotedMessage,
+  };
+}
+
+function stickerFailure(ctx, message, hint = null, command = 's') {
+  const prefix = ctx.prefix ?? '.';
+  const defaultHint = command === 'spack'
+    ? `Responde al álbum con ${prefix}spack <nombre del pack>.`
+    : ['brat', 'ttp', 'attp'].includes(command)
+      ? `Ejemplo: ${prefix}${command} hola mundo`
+      : `Envía una imagen JPG, PNG o WebP con ${prefix}s en el caption, o responde a una imagen con ese comando.`;
+  return fail('sys.invalid', {
+    command,
+    message,
+    hint: hint ?? defaultHint,
+  });
+}
+
+/** Convierte la imagen actual o la imagen citada y la devuelve como sticker. */
+export async function createSticker(ctx, raw = null) {
+  const current = mediaCandidate(ctx.message);
+  const currentImage = current?.type === 'image';
+  let source = currentImage ? { ...current, message: ctx.raw } : null;
+
+  if (!source) {
+    const info = contextInfo(ctx.message);
+    if (info?.quotedMessage) {
+      const quoted = mediaCandidate(unwrappedContent(info.quotedMessage));
+      if (quoted) source = { ...quoted, message: quotedWAMessage(ctx, info) };
+    }
+  }
+
+  if (!source) {
+    if (current?.type === 'video') {
+      return stickerFailure(ctx, 'Por ahora puedo crear stickers desde imágenes estáticas (JPG, PNG o WebP), no desde videos.');
+    }
+    const info = contextInfo(ctx.message);
+    if (info?.quotedMessage && mediaCandidate(unwrappedContent(info.quotedMessage))?.type === 'video') {
+      return stickerFailure(ctx, 'Por ahora puedo crear stickers desde imágenes estáticas (JPG, PNG o WebP), no desde videos.');
+    }
+    return stickerGuide(ctx);
+  }
+
+  const declaredBytes = Number(source.media?.fileLength ?? 0);
+  if (Number.isFinite(declaredBytes) && declaredBytes > MAX_STICKER_INPUT_BYTES) {
+    return stickerFailure(ctx, 'La imagen supera el límite de 15 MB.');
+  }
+  if (typeof ctx.client?.downloadMediaBuffer !== 'function') {
+    return stickerFailure(ctx, 'No pude descargar la imagen desde este chat. Inténtalo de nuevo.');
+  }
+
+  try {
+    const input = await ctx.client.downloadMediaBuffer(source.message, { maxBytes: MAX_STICKER_INPUT_BYTES });
+    const metadata = parseStickerMeta(raw, currentMeta(ctx));
+    const sticker = await imageToSticker(input, metadata);
+    return ok('sticker.created', {
+      userName: ctx.author.name,
+      pack: metadata.pack || null,
+      author: metadata.author || null,
+      command: 's',
+    }, {
+      mediaExtra: [{ kind: 'sticker', buffer: sticker }],
+    });
+  } catch (error) {
+    if (error instanceof StickerImageError) {
+      return stickerFailure(ctx, error.message);
+    }
+    if (error?.code === 'MEDIA_TOO_LARGE') {
+      return stickerFailure(ctx, 'La imagen supera el límite de 15 MB.');
+    }
+    return stickerFailure(ctx, 'No pude descargar o convertir esa imagen. Comprueba que siga disponible e inténtalo otra vez.');
+  }
 }
 
 export function stickerGuide(ctx) {
@@ -20,33 +165,159 @@ export function stickerGuide(ctx) {
     userName: ctx.author.name,
     pack: meta.pack || null,
     author: meta.author || null,
+    isGroup: Boolean(ctx.isGroup),
     command: 's',
   });
 }
 
-export function brat(ctx, raw = null) {
+async function createTextSticker(ctx, raw, style) {
+  const command = style;
   const text = sanitizeText(raw, 120);
   if (!text) {
     return fail('sys.invalid', {
-      command: 'brat',
-      message: 'Escribe el texto del sticker.',
-      hint: `Ejemplo: ${ctx.prefix ?? '.'}brat hola mundo`,
+      command,
+      message: 'Escribe el texto que quieres convertir en sticker.',
+      hint: `Ejemplo: ${ctx.prefix ?? '.'}${command} hola mundo`,
     });
   }
-  const meta = currentMeta(ctx);
-  // Versión texto del estilo BRAT: fondo verde legible en el chat.
-  const banner = `🟩 𝙱𝚁𝙰𝚃 🟩\n${text.toLowerCase()}`;
-  return ok('sticker.brat', {
+
+  const metadata = currentMeta(ctx);
+  try {
+    const sticker = await textToSticker(text, style, metadata);
+    const data = {
+      userName: ctx.author.name,
+      text,
+      pack: metadata.pack || null,
+      author: metadata.author || null,
+      style,
+      isAnimated: style === 'attp',
+      command,
+    };
+    if (style === 'brat') data.banner = `🟩 𝙱𝚁𝙰𝚃 🟩\n${text.toLowerCase()}`;
+    return ok(style === 'brat' ? 'sticker.brat' : 'sticker.created', data, {
+      mediaExtra: [{ kind: 'sticker', buffer: sticker, ...(style === 'attp' ? { isAnimated: true } : {}) }],
+    });
+  } catch (error) {
+    const message = error instanceof StickerImageError
+      ? error.message
+      : 'No pude renderizar el texto en un sticker. Inténtalo de nuevo.';
+    return stickerFailure(ctx, message, null, command);
+  }
+}
+
+export function brat(ctx, raw = null) {
+  return createTextSticker(ctx, raw, 'brat');
+}
+
+export function ttp(ctx, raw = null) {
+  return createTextSticker(ctx, raw, 'ttp');
+}
+
+export function attp(ctx, raw = null) {
+  return createTextSticker(ctx, raw, 'attp');
+}
+
+function stickerPackParentId(sourceMessage, quotedInfo) {
+  const sourceContent = sourceMessage ? unwrappedContent(sourceMessage) : null;
+  const association = sourceContent?.messageContextInfo?.messageAssociation;
+  return association?.parentMessageKey?.id ??
+    (quotedInfo && !mediaCandidate(sourceContent)?.type ? quotedInfo.stanzaId : null);
+}
+
+/** Crea un pack WebP desde las imágenes de un álbum al que se respondió. */
+export async function stickerPack(ctx, raw = null) {
+  const pack = sanitizeText(raw, 130).trim().slice(0, 60);
+  if (!pack) {
+    return stickerFailure(ctx, 'Indica el nombre del pack que quieres crear.', `Ejemplo: ${ctx.prefix ?? '.'}spack Mis fotos`, 'spack');
+  }
+
+  const current = mediaCandidate(ctx.message);
+  const info = contextInfo(ctx.message);
+  const quotedCandidate = info?.quotedMessage ? mediaCandidate(unwrappedContent(info.quotedMessage)) : null;
+  const currentImage = current?.type === 'image';
+  const sourceMessage = currentImage
+    ? ctx.raw
+    : info?.quotedMessage
+      ? quotedWAMessage(ctx, info)
+      : null;
+  if (!sourceMessage && !info?.stanzaId) {
+    return stickerFailure(ctx, 'Responde al álbum o a una de sus fotos con .spack y el nombre del pack.', `Responde a las fotos con ${ctx.prefix ?? '.'}spack Mi pack`, 'spack');
+  }
+
+  const parentId = stickerPackParentId(sourceMessage, info);
+  let albumMessages = [];
+  if (parentId && typeof ctx.client?.getAlbumImages === 'function') {
+    try {
+      albumMessages = await ctx.client.getAlbumImages(ctx.chatJid, parentId);
+    } catch {
+      albumMessages = [];
+    }
+  }
+
+  const messages = [...albumMessages, ...(sourceMessage ? [sourceMessage] : [])];
+  const seen = new Set();
+  const images = [];
+  for (const message of messages) {
+    const candidate = mediaCandidate(unwrappedContent(message));
+    if (candidate?.type !== 'image') continue;
+    const id = message?.key?.id;
+    const identity = id ? String(id) : message;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    images.push({ message, media: candidate.media });
+  }
+
+  if (!images.length) {
+    if (current?.type === 'video' || quotedCandidate?.type === 'video') {
+      return stickerFailure(ctx, 'El pack admite fotos estáticas, no videos.', null, 'spack');
+    }
+    return stickerFailure(ctx, 'No encontré fotos de ese álbum. Responde a una de sus imágenes y vuelve a intentarlo.', null, 'spack');
+  }
+  if (images.length > MAX_STICKERS_PER_PACK) {
+    return stickerFailure(ctx, `El pack admite hasta ${MAX_STICKERS_PER_PACK} fotos; este álbum supera ese límite.`, null, 'spack');
+  }
+  if (typeof ctx.client?.downloadMediaBuffer !== 'function') {
+    return stickerFailure(ctx, 'No pude descargar las fotos desde este chat. Inténtalo de nuevo.', null, 'spack');
+  }
+
+  const author = sanitizeText(ctx.bot?.pushName ?? ctx.client?.pushName ?? IDENTITY.name, 60) || IDENTITY.name;
+  const mediaExtra = [];
+  let skipped = 0;
+  for (const image of images) {
+    const declaredBytes = Number(image.media?.fileLength ?? 0);
+    if (Number.isFinite(declaredBytes) && declaredBytes > MAX_STICKER_INPUT_BYTES) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      const input = await ctx.client.downloadMediaBuffer(image.message, { maxBytes: MAX_STICKER_INPUT_BYTES });
+      const sticker = await imageToSticker(input, { pack, author });
+      mediaExtra.push({ kind: 'sticker', buffer: sticker });
+    } catch {
+      skipped += 1;
+    }
+  }
+
+  if (!mediaExtra.length) {
+    return stickerFailure(ctx, 'No pude convertir ninguna de las fotos del pack. Comprueba que sigan disponibles e inténtalo otra vez.', null, 'spack');
+  }
+  return ok('sticker.pack.created', {
     userName: ctx.author.name,
-    text,
-    banner,
-    pack: meta.pack || null,
-    author: meta.author || null,
-    command: 'brat',
-  });
+    pack,
+    author,
+    count: mediaExtra.length,
+    skipped,
+    command: 'spack',
+  }, { mediaExtra });
 }
 
 export function setMeta(ctx, raw = null) {
+  if (!ctx.group?.groupId) {
+    return fail('sys.invalid', {
+      command: 'setmeta',
+      message: 'Los metadatos predeterminados se guardan por grupo. Usa .s pack | autor al crear un sticker en privado.',
+    });
+  }
   const text = sanitizeText(raw, 130);
   if (!text) {
     return fail('sys.invalid', {
@@ -79,6 +350,12 @@ export function setMeta(ctx, raw = null) {
 }
 
 export function delMeta(ctx) {
+  if (!ctx.group?.groupId) {
+    return fail('sys.invalid', {
+      command: 'delmeta',
+      message: 'No hay metadatos predeterminados guardados en este chat privado.',
+    });
+  }
   stickerMetaRepo.clear(ctx.group.groupId, ctx.author.jid);
   return ok('sticker.meta', {
     userName: ctx.author.name,
@@ -186,4 +463,4 @@ export async function ssearch(ctx, raw = null) {
   );
 }
 
-export default { stickerGuide, brat, setMeta, delMeta, ssearch };
+export default { createSticker, stickerPack, stickerGuide, brat, ttp, attp, setMeta, delMeta, ssearch };

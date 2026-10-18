@@ -288,7 +288,7 @@ export async function mediaContent(media, captionText = '') {
   const caption = captionText ? String(captionText).slice(0, CAPTION_LIMIT) : undefined;
   if (kind === 'sticker') {
     const buffer = await resolveMediaSource(media);
-    return buffer ? { sticker: buffer } : null;
+    return buffer ? { sticker: buffer, ...(media.isAnimated ? { isAnimated: true } : {}) } : null;
   }
   if (kind === 'audio') {
     if (media.url && !Buffer.isBuffer(media.buffer)) {

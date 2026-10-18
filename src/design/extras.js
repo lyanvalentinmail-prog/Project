@@ -421,17 +421,46 @@ export function perfilField({ field, value, removed, userName } = {}) {
    STICKERS
    ═══════════════════════════════════════════════════════════════ */
 
-export function stickerGuide({ userName, pack, author } = {}) {
+export function stickerGuide({ userName, pack, author, isGroup } = {}) {
   return [
     `${SYM.bracketL} ⭐ ${SYM.bracketR} ㅤ𝐶𝑟𝑒𝑎𝑟 ㅤ𝑠𝑡𝑖𝑐𝑘𝑒𝑟`,
     RULE.thin,
-    `ㅤ${SYM.arrow}ㅤ${str(userName)}, responde a una imagen, video o sticker con:`,
-    cmd('s', '[pack | autor]'),
+    `ㅤ${SYM.arrow}ㅤ${str(userName)}, envía una imagen con ${inlineCmd('s')} en el caption, o responde a una imagen con ese comando.`,
+    `ㅤTambién funcionan ${inlineCmd('sticker')}, ${inlineCmd('stiker')} y ${inlineCmd('wm')}.`,
+    `ㅤTexto: ${inlineCmd('brat')}, ${inlineCmd('ttp')} o ${inlineCmd('attp')}; pack de álbum: ${inlineCmd('spack', 'nombre')}.`,
     '',
-    pack || author ? kv('Tus metadatos', `${str(pack, '—')} · ${str(author, '—')}`) : `ㅤGuarda tus metadatos con ㅤ${inlineCmd('setmeta', 'pack | autor')}`,
+    pack || author
+      ? kv('Tus metadatos', `${str(pack, '—')} · ${str(author, '—')}`)
+      : isGroup
+        ? `ㅤGuarda tus metadatos con ㅤ${inlineCmd('setmeta', 'pack | autor')}`
+        : `ㅤEn privado, añade pack | autor al comando ${inlineCmd('s')}.`,
     RULE.thin,
     `ㅤ${KAOMOJI.happy}`,
   ].join('\n');
+}
+
+export function stickerCreated({ userName, pack, author, isAnimated } = {}) {
+  return [
+    `${SYM.bracketL} ✨ ${SYM.bracketR} ㅤ${isAnimated ? '𝑆𝑡𝑖𝑐𝑘𝑒𝑟 𝑎𝑛𝑖𝑚𝑎𝑑𝑜' : '𝑆𝑡𝑖𝑐𝑘𝑒𝑟 𝑐𝑟𝑒𝑎𝑑𝑜'}`,
+    RULE.thin,
+    `ㅤ${SYM.clover}ㅤListo, ${str(userName)}. Aquí tienes tu sticker.`,
+    pack || author ? kv('Pack / autor', `${str(pack, '—')} · ${str(author, '—')}`) : null,
+    RULE.thin,
+    `ㅤ${KAOMOJI.happy}`,
+  ].filter(Boolean).join('\n');
+}
+
+export function stickerPackCreated({ userName, pack, author, count, skipped = 0 } = {}) {
+  const omitted = num(skipped);
+  return [
+    `${SYM.bracketL} 📦 ${SYM.bracketR} ㅤ𝑃𝑎𝑐𝑘 ㅤ𝑐𝑟𝑒𝑎𝑑𝑜`,
+    RULE.thin,
+    `ㅤ${SYM.clover}ㅤ${str(userName)}, convertí ${num(count)} foto${num(count) === 1 ? '' : 's'} en sticker${num(count) === 1 ? '' : 's'} para “${str(pack)}”.`,
+    kv('Autor', str(author)),
+    omitted ? `ㅤ${SYM.leaf}ㅤOmití ${omitted} foto${omitted === 1 ? '' : 's'} que no pude convertir.` : null,
+    RULE.thin,
+    `ㅤ${KAOMOJI.happy}`,
+  ].filter(Boolean).join('\n');
 }
 
 export function stickerBrat({ userName, banner, pack, author } = {}) {
@@ -775,7 +804,7 @@ export default {
   ecoBalance, ecoTop, ecoEinfo, ecoResult, ecoDaily, ecoBet, ecoTransfer, ecoSteal, ecoBank,
   dlMusic, dlLink, dlLyrics, dlTiktok, dlInstagram, dlSpotify, dlPinterest,
   perfilProposal, perfilWedding, perfilDivorce, perfilHistory, perfilPfp, perfilField,
-  stickerGuide, stickerBrat, stickerMeta, stickerSearch,
+  stickerGuide, stickerCreated, stickerPackCreated, stickerBrat, stickerMeta, stickerSearch,
   toolIa, toolVer, toolConvert,
   logoCard,
   modPromote, modDemote, modTagall, modNotify, modRevoke, modMute, modUnmute, modMutelist, modToggle, modSettext,

@@ -10,7 +10,7 @@
  *              { kind: 'image'|'sticker'|'video'|'audio', buffer|url, mimetype })
  *              que se envía como mensaje de medios con el texto como caption),
  *     extra:   mensajes adicionales  → { to, view, data, mentions, linkRequest }
- *     mediaExtra: archivos extra    → [{ kind, buffer|url, mimetype, caption }]
+ *     mediaExtra: archivos extra    → [{ kind, buffer|url, mimetype, caption, isAnimated }]
  *     actions: efectos sobre WhatsApp → { kind, ... }
  *   }
  *
