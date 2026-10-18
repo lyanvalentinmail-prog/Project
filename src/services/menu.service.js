@@ -43,20 +43,25 @@ function getMetaForCategory(id, customCategories) {
  * Construye datos del menú para un bot
  */
 export function buildMenuData(instance, prefix) {
-  const custom = instance ? customRepo.get(instance.id) : { menuStyle: 'versova', aliases: {}, disabled: [], categories: [], customCommands: [], categoryOverrides: {} };
+  const custom = instance ? customRepo.get(instance.id) : { menuStyle: 'versova', menuMode: 'text', banner: null, aliases: {}, disabled: [], disabledCategories: [], categories: [], customCommands: [], categoryOverrides: {} };
   // lista base
   const disabledSet = new Set((custom.disabled || []).map((s) => s.toLowerCase()));
+  const disabledCats = new Set((custom.disabledCategories || []).map((s) => s.toLowerCase()));
   const aliasExtra = custom.aliases || {};
   const overrides = custom.categoryOverrides || {};
 
-  // commands filtrados
-  const visibleBuiltin = registry.list.filter((c) => !c.hidden && !disabledSet.has(c.name.toLowerCase()));
+  // commands filtrados: se apaga por comando y por categoría entera
+  const categoryOf = (name, base) => overrides[String(name).toLowerCase()] || base;
+  const visibleBuiltin = registry.list.filter((c) =>
+    !c.hidden &&
+    !disabledSet.has(c.name.toLowerCase()) &&
+    !disabledCats.has(String(categoryOf(c.name, c.category)).toLowerCase()));
 
   const allCommands = [];
 
   for (const c of visibleBuiltin) {
     const extraAliases = aliasExtra[c.name.toLowerCase()] || [];
-    const cat = overrides[c.name.toLowerCase()] || c.category;
+    const cat = categoryOf(c.name, c.category);
     allCommands.push({
       name: c.name,
       aliases: [...(c.aliases || []), ...extraAliases],
@@ -71,6 +76,7 @@ export function buildMenuData(instance, prefix) {
   // custom commands
   for (const cc of (custom.customCommands || [])) {
     if (disabledSet.has(cc.name.toLowerCase())) continue;
+    if (disabledCats.has(String(cc.category).toLowerCase())) continue;
     allCommands.push({
       name: cc.name,
       aliases: cc.aliases || [],
@@ -88,8 +94,10 @@ export function buildMenuData(instance, prefix) {
   const customCats = custom.categories || [];
   // ensure all categories present
   const allCatIds = new Set(allCommands.map((c) => c.category));
-  // also include custom empty categories? show them even if empty? yes if user created
-  for (const cc of customCats) allCatIds.add(cc.id);
+  // also include custom empty categories, salvo las categorías apagadas
+  for (const cc of customCats) {
+    if (!disabledCats.has(String(cc.id).toLowerCase())) allCatIds.add(cc.id);
+  }
 
   for (const catId of allCatIds) {
     const meta = getMetaForCategory(catId, customCats);
@@ -117,6 +125,49 @@ export function buildMenuData(instance, prefix) {
     version: IDENTITY.version,
     categories: ordered,
     style: custom.menuStyle || 'versova',
+    menuMode: custom.menuMode || 'text',
+    banner: custom.banner || null,
+    custom,
+  };
+}
+
+/**
+ * Cuerpo y secciones de la LISTA interactiva (modo `menuMode: 'list'`):
+ * la info del bot arriba y debajo las categorías para seleccionar.
+ * Cada fila envía `<prefijo>menu <categoría>` al pulsarla.
+ */
+export function buildListPayload(data, { userName = null } = {}) {
+  const prefix = data.prefix || '.';
+  const body = [
+    userName ? `Hola ${userName} ( ᵕ ᴗ ᵕ )♡` : null,
+    `𖦹 𝖭𝖺𝗆𝖾 ⁙ ${data.name}`,
+    `𖦹 𝖳𝖾𝖺𝗆 ⁙ ${data.team}`,
+    `𖦹 𝖯𝗋𝖾𝖿𝗂𝗑 ⁙ ${data.prefix}`,
+    `𖦹 𝖲𝗍𝖺𝗍𝗎𝗌 ⁙ ${data.status}`,
+    `𖦹 𝖵𝖾𝗋𝗌𝗂𝗈𝗇 ⁙ ${data.version}`,
+    '',
+    'Toca el botón y elige una categoría del menú.',
+  ].filter(Boolean).join('\n');
+
+  const rows = [
+    {
+      title: '☕ 𝑻𝒐𝒅𝒐 𝒆𝒍 𝒎𝒆𝒏𝒖',
+      description: 'Ver todos los comandos explicados',
+      id: `${prefix}help`,
+    },
+    ...data.categories.map((cat) => ({
+      title: `${cat.meta.icon} ${cat.meta.title}`.slice(0, 24),
+      description: `${cat.commands.length} comandos · elige para ver`.slice(0, 72),
+      id: `${prefix}menu ${cat.meta.id}`,
+    })),
+  ];
+
+  return {
+    title: `𝑽 𝑬́ 𝑹 𝑺 𝑶 𝑽 𝑨 · ${data.name}`.slice(0, 60),
+    body,
+    footer: `≪⁹⁹ ⁙ 𝐕𝐄́𝐑𝐒𝐎𝐕𝐀 · est. 2026`,
+    buttonText: '꒰ 📜 ꒱ 𝖵𝖾𝗋 𝗆𝖾𝗇𝗎́',
+    sections: [{ title: '𝓜𝓮𝓷𝓾 𝓭𝓮 𝓬𝓸𝓶𝓪𝓷𝓭𝓸𝓼', rows }],
   };
 }
 

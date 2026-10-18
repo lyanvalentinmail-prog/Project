@@ -1,11 +1,14 @@
 /**
  * 𓆩 🍰 𓆪  VÉRSOVA · servicio de logos (paquete Raiden)
  * ────────────────────────────────────────────────────────────────
- * 25 efectos de texto. El bot responde con una tarjeta del efecto
- * pedido y el texto listo para generar: sin inventar imágenes.
+ * 25 efectos de texto. El bot GENERA la imagen del logo aquí mismo
+ * (motor propio por software, ver logo-renderer.js) y la envía como
+ * mensaje de imagen con su tarjeta. Sin APIs externas: nunca falla
+ * por culpa de terceros.
  */
 import { ok, fail } from './result.js';
 import { sanitizeText } from '../utils/text.js';
+import { renderLogoPng } from './logo-renderer.js';
 
 export const LOGO_EFFECTS = Object.freeze({
   logoalas: { title: 'Alas de ángel galácticas', emoji: '👼' },
@@ -35,7 +38,7 @@ export const LOGO_EFFECTS = Object.freeze({
   logosolitario: { title: 'Tipografía en pavimento', emoji: '🛣️' },
 });
 
-export function make(ctx, effect, raw = null) {
+export async function make(ctx, effect, raw = null) {
   const def = LOGO_EFFECTS[effect];
   if (!def) return null;
   const text = sanitizeText(raw, 30);
@@ -46,6 +49,13 @@ export function make(ctx, effect, raw = null) {
       hint: `Ejemplo: ${ctx.prefix ?? '.'}${effect} Versova`,
     });
   }
+  // Generación real de la imagen (PNG dibujado por el motor propio).
+  let png = null;
+  try {
+    png = renderLogoPng(effect, text);
+  } catch {
+    png = null;
+  }
   return ok('logo.card', {
     effect,
     title: def.title,
@@ -53,6 +63,8 @@ export function make(ctx, effect, raw = null) {
     text,
     userName: ctx.author.name,
     command: effect,
+    ...(png ? { media: { kind: 'image', buffer: png, mimetype: 'image/png' } } : {}),
+    generated: Boolean(png),
   });
 }
 

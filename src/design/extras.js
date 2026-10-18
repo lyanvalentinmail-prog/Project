@@ -192,19 +192,89 @@ export function ecoBank({ userName, action, amountFmt, coinsFmt, bankFmt, coin }
    DESCARGAS
    ═══════════════════════════════════════════════════════════════ */
 
-export function dlMusic({ kind, query, searchUrl } = {}) {
+export function dlMusic({ kind, query, searchUrl, results = [], top = null, downloaded = false } = {}) {
   const isVideo = String(kind) === 'video';
+  const list = Array.isArray(results) ? results : [];
+  const topData = top && typeof top === 'object' ? top : null;
+  const header = `${SYM.bracketL} ${isVideo ? '🎬' : '🎧'} ${SYM.bracketR} ㅤ${isVideo ? '𝑉𝑖𝑑𝑒𝑜' : '𝑀𝑢́𝑠𝑖𝑐𝑎'} ㅤ·ㅤ YouTube`;
+  if (topData) {
+    const others = list.slice(1).map((r) =>
+      `ㅤ${SYM.clover}ㅤ${str(r.title)}\nㅤㅤㅤ${str(r.channel)}${r.duration ? ` · ${str(r.duration)}` : ''} · ${str(r.url)}`
+    );
+    return [
+      header,
+      RULE.coffee,
+      kv('Resultado', str(topData.title)),
+      topData.channel ? kv('Canal', str(topData.channel)) : null,
+      topData.duration ? kv('Duración', str(topData.duration)) : null,
+      topData.views ? kv('Vistas', str(topData.views)) : null,
+      '',
+      str(topData.url),
+      downloaded ? `ㅤ${SYM.leaf}ㅤAudio descargado y enviado ✦` : null,
+      ...(others.length ? ['', 'ㅤotros resultados ⁙', ...others] : []),
+      RULE.coffee,
+      `ㅤ${KAOMOJI.happy}`,
+    ].filter(Boolean).join('\n');
+  }
   return [
-    `${SYM.bracketL} ${isVideo ? '🎬' : '🎧'} ${SYM.bracketR} ㅤ${isVideo ? '𝑉𝑖𝑑𝑒𝑜' : '𝑀𝑢́𝑠𝑖𝑐𝑎'} ㅤ·ㅤ YouTube`,
+    header,
     RULE.coffee,
     kv('Búsqueda', str(query)),
     '',
     str(searchUrl),
     '',
-    `ㅤ${SYM.leaf}ㅤAbre el enlace y elige tu resultado favorito.`,
-    `ㅤ${SYM.leaf}ㅤLímite sugerido ⁙ audios de hasta 7 minutos.`,
+    `ㅤ${SYM.leaf}ㅤSin conexión a YouTube ahora. Abre el enlace y elige tu resultado favorito.`,
     RULE.coffee,
     `ㅤ${KAOMOJI.happy}`,
+  ].join('\n');
+}
+
+export function dlTiktok({ title, author, downloaded } = {}) {
+  return [
+    `${SYM.bracketL} 🎵 ${SYM.bracketR} ㅤ𝑇𝑖𝑘𝑇𝑜𝑘`,
+    RULE.thin,
+    kv('Video', str(title)),
+    kv('Autor', str(author)),
+    downloaded ? `ㅤ${SYM.leaf}ㅤVideo descargado y enviado ✦` : null,
+    RULE.thin,
+    `ㅤ${KAOMOJI.wink}`,
+  ].filter(Boolean).join('\n');
+}
+
+export function dlInstagram({ url, downloaded } = {}) {
+  return [
+    `${SYM.bracketL} 📸 ${SYM.bracketR} ㅤ𝐼𝑛𝑠𝑡𝑎𝑔𝑟𝑎𝑚`,
+    RULE.thin,
+    str(url),
+    downloaded ? `ㅤ${SYM.leaf}ㅤContenido descargado y enviado ✦` : null,
+    RULE.thin,
+    `ㅤ${KAOMOJI.wink}`,
+  ].filter(Boolean).join('\n');
+}
+
+export function dlSpotify({ title, author, album, url, preview } = {}) {
+  return [
+    `${SYM.bracketL} 🎧 ${SYM.bracketR} ㅤ𝑆𝑝𝑜𝑡𝑖𝑓𝑦`,
+    RULE.coffee,
+    kv('Título', str(title)),
+    kv('Artista', str(author)),
+    album ? kv('Álbum', str(album)) : null,
+    '',
+    str(url),
+    preview ? `ㅤ${SYM.leaf}ㅤTe envío una vista previa de 30 segundos ✦` : null,
+    RULE.coffee,
+    `ㅤ${KAOMOJI.happy}`,
+  ].filter(Boolean).join('\n');
+}
+
+export function dlPinterest({ query, count } = {}) {
+  return [
+    `${SYM.bracketL} 📌 ${SYM.bracketR} ㅤ𝑃𝑖𝑛𝑡𝑒𝑟𝑒𝑠𝑡 ㅤ·ㅤ ${str(query)}`,
+    RULE.thin,
+    `ㅤ${SYM.leaf}ㅤTe envío ${count} imagen${count === 1 ? '' : 'es'} encontrada${count === 1 ? '' : 's'} ✦`,
+    `ㅤ${SYM.leaf}ㅤMánda cualquiera de vuelta con .s para hacer sticker.`,
+    RULE.thin,
+    `ㅤ${KAOMOJI.wink}`,
   ].join('\n');
 }
 
@@ -222,10 +292,22 @@ export function dlLink({ network, icon, url, hint } = {}) {
     .join('\n');
 }
 
-export function dlLyrics({ query, geniusUrl, letrasUrl } = {}) {
+export function dlLyrics({ query, artist, title, lyrics, truncated, geniusUrl, letrasUrl } = {}) {
+  if (lyrics) {
+    return [
+      `${SYM.bracketL} 🎤 ${SYM.bracketR} ㅤ𝐿𝑒𝑡𝑟𝑎 ㅤ·ㅤ ${str(title)}`,
+      `ㅤ◢◣ ㅤ${str(artist)}`,
+      RULE.sakura,
+      str(lyrics),
+      truncated ? `ㅤ…ㅤ(letra recortada) ㅤ${str(letrasUrl)}` : null,
+      RULE.sakura,
+      `ㅤCanta bonito ☕ ㅤ${KAOMOJI.cheer}`,
+    ].filter(Boolean).join('\n');
+  }
   return [
     `${SYM.bracketL} 🎤 ${SYM.bracketR} ㅤ𝐿𝑒𝑡𝑟𝑎 ㅤ·ㅤ ${str(query)}`,
     RULE.sakura,
+    `ㅤ${SYM.leaf}ㅤNo encontré la letra en línea. Prueba aquí:`,
     `ㅤ${SYM.leaf}ㅤGenius ⁙ ${str(geniusUrl)}`,
     `ㅤ${SYM.leaf}ㅤLetras ⁙ ${str(letrasUrl)}`,
     RULE.sakura,
@@ -383,13 +465,29 @@ export function stickerMeta({ userName, pack, author, cleared } = {}) {
     .join('\n');
 }
 
-export function stickerSearch({ query, url } = {}) {
+export function stickerSearch({ query, url, results = [], sent = 0 } = {}) {
+  const packs = Array.isArray(results) ? results : [];
+  if (packs.length) {
+    const rows = packs.map((pack) =>
+      `ㅤ${SYM.clover}ㅤ${str(pack.name)} ⁙ ${str(pack.author)} · ${pack.count} stickers`
+    );
+    return [
+      `${SYM.bracketL} 🔍 ${SYM.bracketR} ㅤ𝑆𝑡𝑖𝑐𝑘𝑒𝑟𝑠 ㅤ·ㅤ ${str(query)}`,
+      RULE.thin,
+      ...rows,
+      '',
+      `ㅤ${SYM.leaf}ㅤTe envío ${sent} sticker${sent === 1 ? '' : 's'} de esos paquetes a continuación.`,
+      `ㅤ${SYM.leaf}ㅤMás en ⁙ ${str(url)}`,
+      RULE.thin,
+      `ㅤ${KAOMOJI.happy}`,
+    ].join('\n');
+  }
   return [
     `${SYM.bracketL} 🔍 ${SYM.bracketR} ㅤ𝑆𝑡𝑖𝑐𝑘𝑒𝑟𝑠 ㅤ·ㅤ ${str(query)}`,
     RULE.thin,
     str(url),
     '',
-    `ㅤ${SYM.leaf}ㅤDescarga el paquete en Sticker.ly y reenvíalo al chat.`,
+    `ㅤ${SYM.leaf}ㅤAhora mismo no pude traer stickers en línea; abre el enlace y reenvía el paquete al chat.`,
     RULE.thin,
     `ㅤ${KAOMOJI.happy}`,
   ].join('\n');
@@ -443,7 +541,7 @@ export function toolConvert({ kind, userName, steps } = {}) {
    LOGOS
    ═══════════════════════════════════════════════════════════════ */
 
-export function logoCard({ title, emoji, text, userName } = {}) {
+export function logoCard({ title, emoji, text, userName, generated = true } = {}) {
   return [
     `${SYM.bracketL} ${emoji ?? '🍰'} ${SYM.bracketR} ㅤ𝐿𝑜𝑔𝑜 ㅤ·ㅤ ${str(title)}`,
     RULE.sakura,
@@ -452,7 +550,9 @@ export function logoCard({ title, emoji, text, userName } = {}) {
     `ㅤ${SYM.leaf}ㅤEfecto ⁙ ${str(title)}`,
     `ㅤ${SYM.leaf}ㅤPedido por ⁙ ${str(userName)}`,
     RULE.sakura,
-    `ㅤ${SYM.scroll}ㅤGenera la imagen con este texto en tu editor favorito y presúmela.`,
+    generated
+      ? `ㅤ${SYM.scroll}ㅤTu logo está listo ✦ generado al momento por el bot.`
+      : `ㅤ${SYM.scroll}ㅤNo pude dibujar la imagen ahora; inténtalo otra vez.`,
     `ㅤ${KAOMOJI.sparkle}`,
   ].join('\n');
 }
@@ -673,7 +773,7 @@ export function sysUserid({ pushName, jid, masked, isOwner, isAdmin, isRegistere
 export default {
   animeReact,
   ecoBalance, ecoTop, ecoEinfo, ecoResult, ecoDaily, ecoBet, ecoTransfer, ecoSteal, ecoBank,
-  dlMusic, dlLink, dlLyrics,
+  dlMusic, dlLink, dlLyrics, dlTiktok, dlInstagram, dlSpotify, dlPinterest,
   perfilProposal, perfilWedding, perfilDivorce, perfilHistory, perfilPfp, perfilField,
   stickerGuide, stickerBrat, stickerMeta, stickerSearch,
   toolIa, toolVer, toolConvert,

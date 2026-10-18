@@ -154,6 +154,37 @@ reiniciar ni volver a vincular. Para revocarlo, borra el número y vuelve a guar
 
 El panel sigue abierto por diseño: limita su acceso a personas de confianza.
 
+### 𓆩 🎨 𓆪 Personaliza tu bot desde la web (editor de menú)
+
+En **Mis Bots → Editar** cada sub-bot tiene su propio editor de menú:
+
+- **Banner del menú** (pestaña *Estilo*): pega la URL de una imagen o súbela desde tu
+  dispositivo (PNG, JPG o WebP, máx. 1 MB; el navegador la comprime solo). El menú se
+  envía con esa imagen encima.
+- **Modo de entrega** (pestaña *Estilo*): elige **💬 Texto decorado** (los 7 estilos
+  de siempre) o **📋 Lista interactiva**: el bot manda su info con un botón que abre el
+  menú de lista nativo de WhatsApp para elegir la categoría (list message). Si el
+  cliente no muestra listas, cae a texto automáticamente.
+- **Categorías** (pestaña *Categorías*): quita o vuelve a poner cualquier sección del
+  menú con un interruptor (incluidas las del sistema). Una categoría apagada no
+  aparece en el menú y sus comandos dejan de responder. También puedes crear
+  categorías nuevas y borrar las tuyas.
+- **Comandos** (pestaña *Comandos*): interruptor maestro por categoría a la derecha de
+  cada grupo (apagar = la categoría entera se desactiva), y fila a fila para un
+  comando suelto. Cuando una categoría está apagada, las filas se muestran con la
+  etiqueta **CATEGORÍA OFF**.
+- Todo se guarda en SQLite por sub-bot con **Guardar cambios** y se aplica desde el
+  siguiente comando, sin reiniciar ni volver a vincular.
+
+Los comandos de **logos** (`.logoneon`, `.logooro`, …) generan ahora el PNG **en el
+propio bot** (25 efectos, fuente pixel 5×7, sin APIs externas) y lo envían como imagen.
+La búsqueda **`.ssearch <texto>`** consulta sticker.ly y sube hasta 5 stickers del pack
+que elijas; **`.play` / `.ytmp3` / `.tiktok` / `.instagram` / `.spotify` /
+`.pinterest` / `.lyrics`** buscan de verdad y, si la fuente externa no responde o no
+hay red, recibes la tarjeta con los enlaces listos para tocar (nunca solo “sin conexión”).
+`.play` intenta descargar el audio mediante el servicio público **cobalt**
+(configurable con `COBALT_INSTANCES` en el `.env`).
+
 ### 𓆩 ✨ 𓆪 Panel web sin parpadeos
 
 El panel se conecta al servidor por SSE y **solo repinta lo que cambió**: si nada se
@@ -213,7 +244,7 @@ src/
 web/                      panel: servidor Express, API REST, SSE, auth y frontend
 tools/simulator.js        banco de pruebas de comandos en terminal (NO es el bot real)
 scripts/                  doctor, base de datos, Termux (instalar/arrancar) y vinculación por terminal
-tests/                    248 pruebas con node:test
+tests/                    308 pruebas con node:test
 docs/                     arquitectura, base de datos, comandos, limitaciones y Termux
 ```
 
@@ -233,7 +264,7 @@ Por eso se puede probar todo sin vincular un número.
 | `npm run vincular` | Vincula un sub-bot desde la terminal (pairing code o `-- --qr`) |
 | `npm run termux` | Termux: bot + panel con wake lock y reinicio automático |
 | `npm run termux:setup` | Termux: instala/actualiza Node.js, dependencias y `.env` |
-| `npm test` | 248 pruebas (servicios, router, base de datos, API, Termux) |
+| `npm test` | 308 pruebas (servicios, router, base de datos, API, Termux) |
 | `npm run sim` | Simulador interactivo de comandos en terminal |
 | `npm run sim -- --demo` | Demo guiada con 81 escenarios reales |
 | `npm run doctor` | Diagnóstico: Node, dependencias, BD, carpetas, `.env`, conectividad |
@@ -261,7 +292,7 @@ herramienta de pruebas y jamás se hace pasar por una conexión real.
 
 ```bash
 npm test
-# tests 248 · pass 248 · fail 0
+# tests 308 · pass 308 · fail 0
 ```
 
 Cubren: registro y duplicados, aprobación por respuesta/folio/nombre, resolución atómica

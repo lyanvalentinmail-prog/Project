@@ -63,12 +63,15 @@ function sampleCpu() {
 
 /** Sub-bot en formato público (sin datos sensibles). */
 export const publicInstance = (row) => {
-  let customSummary = { menuStyle: row.menu_style || 'versova', disabledCount: 0, customCount: 0, aliasCount: 0, categoryCount: 0 };
+  let customSummary = { menuStyle: row.menu_style || 'versova', menuMode: 'text', hasBanner: false, disabledCount: 0, disabledCategoryCount: 0, customCount: 0, aliasCount: 0, categoryCount: 0 };
   try {
     const cfg = row.custom_config ? JSON.parse(row.custom_config) : {};
     customSummary = {
       menuStyle: row.menu_style || cfg.menuStyle || 'versova',
+      menuMode: cfg.menuMode === 'list' ? 'list' : 'text',
+      hasBanner: Boolean(cfg.banner && (cfg.banner.url || cfg.banner.dataUrl)),
       disabledCount: Array.isArray(cfg.disabled) ? cfg.disabled.length : 0,
+      disabledCategoryCount: Array.isArray(cfg.disabledCategories) ? cfg.disabledCategories.length : 0,
       customCount: Array.isArray(cfg.customCommands) ? cfg.customCommands.length : 0,
       aliasCount: cfg.aliases ? Object.keys(cfg.aliases).reduce((a,k)=>a + (cfg.aliases[k]?.length||0),0) : 0,
       categoryCount: Array.isArray(cfg.categories) ? cfg.categories.length : 0,
