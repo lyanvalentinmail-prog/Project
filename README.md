@@ -199,6 +199,46 @@ que la página se recargaba sola cada segundo). Además:
   la paleta del proyecto: botón con glow, loader átomo, switch hamburguesa y tarjetas
   con icono degradado.
 
+### 𓆩 🔑 𓆪 API funcional, cuentas y API keys
+
+En la página **Endpoints** del panel hay pestañas:
+
+| Pestaña | Qué hace |
+|---|---|
+| **Funcionales** | 38 endpoints propios que responden de verdad (nada simulado), con buscador y un probador en vivo (rellena parámetros → *Probar* → ves el JSON o la imagen). |
+| **Mis API Keys** | Iniciar sesión / registrarse, crear keys (**máximo 100 días**), renovarlas, revocarlas y ver el uso reciente. |
+| **Catálogo** | El catálogo externo de antes. |
+| **Owner** | Solo para `lyanvalentinmail@gmail.com`: usuarios, keys activas, peticiones y endpoints más usados; puede revocar keys o eliminar cuentas. |
+
+**Endpoints** (todos `GET`, base `/api/v1`, CORS abierto; `GET /api/v1` lista el catálogo sin key):
+
+- Texto: `/text/reverse` `/text/case` `/text/count` `/text/slug` `/text/fancy` `/text/leet` `/text/morse` `/text/palindrome`
+- Codificación: `/encode/base64` `/encode/url` `/encode/hex` `/encode/binary` `/crypto/hash` `/crypto/uuid` `/crypto/password`
+- Matemáticas y conversión: `/math/calc` (sin `eval`) `/math/random` `/math/prime` `/convert/roman` `/convert/units` `/convert/base` `/convert/color`
+- Tiempo: `/time/now` `/time/age` `/time/diff`
+- Diversión: `/fun/ship` `/fun/dice` `/fun/8ball` `/fun/coin` `/generate/lorem`
+- Imágenes (PNG/SVG): `/generate/qr` `/generate/logo` `/generate/avatar`
+- Validación: `/validate/email` `/validate/phone` `/info/ip`
+- Bot: `/bot/status` `/bot/commands`
+
+```bash
+curl "https://tu-panel/api/v1/text/fancy?text=Versova&style=boldscript" -H "X-API-Key: vsk_..."
+# o con ?key=vsk_...
+```
+
+Reglas:
+
+- Contraseñas con **scrypt** (mín. 8 caracteres); las cuentas antiguas de créditos siguen
+  entrando y su hash se migra solo.
+- Las keys (`vsk_…`) se guardan **hasheadas** (SHA-256): se muestran una sola vez al crearlas.
+- Vigencia de **1 a 100 días** (también para el owner y al renovar). Caducadas o revocadas
+  responden `401` con `EXPIRED_KEY` / `REVOKED_KEY`.
+- Usuarios normales: hasta 5 keys activas y 60 peticiones/min por key (`429 RATE_LIMIT`).
+  Owner: hasta 50 keys y sin límite por minuto.
+- El owner se define con `OWNER_EMAIL` (por defecto `lyanvalentinmail@gmail.com`). Basta
+  con registrarse con ese correo; si además defines `OWNER_PASSWORD`, la cuenta se crea
+  sola al arrancar. Crear cupones de créditos ahora también requiere ser owner.
+
 Puedes repetir el proceso hasta **3 sub-bots** con números distintos. Cada uno tiene su
 carpeta de credenciales en `sessions/` (fuera de git) y su propio prefijo.
 
@@ -292,7 +332,7 @@ herramienta de pruebas y jamás se hace pasar por una conexión real.
 
 ```bash
 npm test
-# tests 308 · pass 308 · fail 0
+# tests 325 · pass 325 · fail 0
 ```
 
 Cubren: registro y duplicados, aprobación por respuesta/folio/nombre, resolución atómica
@@ -301,7 +341,10 @@ parejas bidireccionales, AFK y su enfriamiento, inactivos, configuración por gr
 warns con expulsión automática, expulsión/ban con confirmación, re-expulsión al reingresar,
 cierre de grupo, aislamiento entre grupos, enmascarado de números en todas las salidas,
 rate-limit, expiración de confirmaciones, robustez ante errores de envío, las 71 plantillas
-de diseño y la API web completa (auth, sub-bots, grupos, solicitudes, SSE, estáticos).
+de diseño la API web completa (auth, sub-bots, grupos, solicitudes, SSE, estáticos), las cuentas
+web y API keys (tope de 100 días, caducidad, revocación, límite por minuto, owner), los
+38 endpoints funcionales y el menú en lista interactiva (envío con nodo `<biz>` y
+lectura de la fila elegida).
 También se prueba el adaptador `messages.upsert`: comandos propios y de terceros,
 chats privados, mensajes offline recientes, deduplicación, ecos del bot, mensajes
 encapsulados y caché de metadatos. El socket se sustituye en las pruebas: no requieren

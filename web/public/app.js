@@ -73,6 +73,16 @@ const desktopItems = [
 const state = {
   view: routeFromPath(),
   apiUser: safeRead('sw_user'),
+  /** Sesión de la cuenta web (token `ses_…`). */
+  session: safeRead('sw_session'),
+  account: null,
+  apiKeys: [],
+  keyUsage: null,
+  newApiKey: null,
+  owner: null,
+  keyForm: { name: '', days: 30 },
+  endpointTab: initialEndpointTab(),
+  fn: { categories: [], total: 0, error: '', query: '', open: new Set(), params: {}, results: {}, loading: {}, playKey: safeRead('sw_play_key', '') || '' },
   /** Revisión del servidor: si no cambia, no se repinta nada. */
   revision: '',
   stream: { source: null, connected: false, since: null },
@@ -153,6 +163,8 @@ function activeField() {
   if (!el) return null;
   const tag = el.tagName;
   const editable = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+  // un campo dentro de una capa oculta (modal cerrado) no cuenta como «escribiendo»
+  if (editable && el.closest?.('[hidden]')) return null;
   return editable && !el.disabled ? el : null;
 }
 
@@ -236,6 +248,7 @@ async function request(path, options = {}) {
   const { method = 'GET', body = null, apiKey = true, headers = {} } = options;
   const requestHeaders = { 'Content-Type': 'application/json', ...headers };
   if (apiKey && state.apiUser?.apiKey) requestHeaders['X-API-Key'] = state.apiUser.apiKey;
+  if (state.session) requestHeaders.Authorization = `Bearer ${state.session}`;
   const response = await fetch(`${API}${path}`, {
     method,
     headers: requestHeaders,
@@ -889,11 +902,21 @@ function renderEndpointResults() {
   const countText = $('#endpoint-result-count');
   if (countText) countText.textContent = `${formatNumber(filtered.length)} endpoint${filtered.length === 1 ? '' : 's'}`;
 }
-function renderEndpoints() {
-  const isFavorites = state.view === 'favorites';
-  return `<div class="page-content"><div class="page-heading"><div><span class="section-kicker">${icon('code')} Catálogo</span><h1>${isFavorites ? 'Tus Favoritos' : 'Endpoints'}</h1><p>${isFavorites ? 'Accesos rápidos a los endpoints que guardaste.' : 'Explora las APIs disponibles, filtra por categoría o busca por nombre.'}</p></div><a class="btn btn-outline btn-small" href="/favorites" data-page="favorites">${icon('star')} Favoritos (${state.favorites.length})</a></div>
+function renderCatalogBody() {
+  return `<div class="catalog-note card"><span>${icon('help')}</span><p>Catálogo de referencia del servicio externo. Para endpoints que se ejecutan de verdad en este servidor usa la pestaña <a href="/endpoints" data-action="endpoint-tab" data-tab="functional">Funcionales</a>.</p><a class="btn btn-outline btn-small" href="/favorites" data-page="favorites">${icon('star')} Favoritos (${state.favorites.length})</a></div>
     <div class="catalog-toolbar"><label class="search-box">${icon('search')}<input id="endpoint-search" class="text-input" type="search" value="${escapeHtml(state.endpointQuery)}" placeholder="Buscar endpoint… (ej: Spotify, TikTok, AI)" autocomplete="off" /></label><div class="filter-row"><button class="filter-chip ${state.endpointMethod === 'all' ? 'is-active' : ''}" type="button" data-action="endpoint-method" data-method="all">Todos</button>${['get', 'post', 'put', 'delete', 'patch'].map((method) => `<button class="filter-chip ${state.endpointMethod === method ? 'is-active' : ''}" type="button" data-action="endpoint-method" data-method="${method}">${method}</button>`).join('')}</div><div class="category-select-row"><select id="endpoint-category" class="select-input" aria-label="Categoría">${['all', ...state.endpoints.map((category) => category.name)].map((category) => `<option value="${escapeHtml(category)}" ${state.endpointCategory === category ? 'selected' : ''}>${category === 'all' ? 'Todas las categorías' : escapeHtml(category)}</option>`).join('')}</select><div class="filter-row"><button class="filter-chip ${state.endpointTier === 'all' ? 'is-active' : ''}" type="button" data-action="endpoint-tier" data-tier="all">Todos</button><button class="filter-chip ${state.endpointTier === 'free' ? 'is-active' : ''}" type="button" data-action="endpoint-tier" data-tier="free">Free</button><button class="filter-chip ${state.endpointTier === 'premium' ? 'is-active' : ''}" type="button" data-action="endpoint-tier" data-tier="premium">Premium</button><button class="filter-chip ${state.endpointTier === 'hybrid' ? 'is-active' : ''}" type="button" data-action="endpoint-tier" data-tier="hybrid">Híbrido</button></div></div></div>
-    <div class="section-heading" style="margin-bottom:12px"><span class="muted small" id="endpoint-result-count">${formatNumber(allEndpoints().length)} endpoints</span><button class="filter-chip" type="button" data-action="endpoint-sort">${state.endpointSort === 'az' ? 'A–Z' : 'Z–A'} ${icon('chart')}</button></div><div id="endpoint-results" class="catalog-categories"></div>${pageFooter()}</div>`;
+    <div class="section-heading" style="margin-bottom:12px"><span class="muted small" id="endpoint-result-count">${formatNumber(allEndpoints().length)} endpoints</span><button class="filter-chip" type="button" data-action="endpoint-sort">${state.endpointSort === 'az' ? 'A–Z' : 'Z–A'} ${icon('chart')}</button></div><div id="endpoint-results" class="catalog-categories"></div>`;
+}
+function renderEndpoints() {
+  if (state.view === 'favorites') {
+    return `<div class="page-content"><div class="page-heading"><div><span class="section-kicker">${icon('star')} Catálogo</span><h1>Tus Favoritos</h1><p>Accesos rápidos a los endpoints que guardaste.</p></div><a class="btn btn-outline btn-small" href="/endpoints" data-action="endpoint-tab" data-tab="catalog">${icon('arrow-left')} Volver al catálogo</a></div>${renderCatalogBody()}${pageFooter()}</div>`;
+  }
+  let body;
+  if (state.endpointTab === 'keys') body = renderKeysTab();
+  else if (state.endpointTab === 'catalog') body = renderCatalogBody();
+  else if (state.endpointTab === 'owner') body = renderOwnerTab();
+  else body = renderFunctionalTab();
+  return `<div class="page-content"><div class="page-heading"><div><span class="section-kicker">${icon('code')} API</span><h1>Endpoints</h1><p>Endpoints funcionales con tu propia API key, gestión de claves y catálogo de referencia.</p></div>${accountChip()}</div>${endpointTabs()}<div class="ep-tab-panel" role="tabpanel">${body}</div>${pageFooter()}</div>`;
 }
 
 function endpointByPath(path) { return allEndpoints().find((endpoint) => endpoint.path === path); }
@@ -920,6 +943,309 @@ function renderEndpointModal(endpoint) {
   $('#endpoint-modal').innerHTML = `<div class="endpoint-modal-head"><span class="bot-orb">${icon('code')}</span><span><h2 id="endpoint-modal-title">${escapeHtml(endpoint.name)}</h2><p>${escapeHtml(endpoint.description || endpoint.path)}</p></span><div class="endpoint-modal-actions"><button class="icon-button" type="button" data-action="copy-endpoint-url" aria-label="Copiar URL">${icon('link')}</button><button class="icon-button" type="button" data-action="close-endpoint" aria-label="Cerrar">${icon('close')}</button></div></div><div class="endpoint-modal-body"><section class="endpoint-url-box"><div class="endpoint-url-label"><span>${icon('bolt')} Endpoint URL</span><button class="key-switch ${state.endpointWithKey ? 'is-on' : ''}" type="button" data-action="toggle-endpoint-key"><span>Con key</span><i></i></button></div><div class="endpoint-url-line"><span class="method-badge">${escapeHtml(endpoint.method || 'GET')}</span><code id="endpoint-url-text">https://api.stellarwa.xyz${escapeHtml(path)}</code><button class="icon-button" type="button" data-action="copy-endpoint-url" aria-label="Copiar URL">${icon('copy')}</button><a class="icon-button" href="https://api.stellarwa.xyz${escapeHtml(path)}" target="_blank" rel="noreferrer" aria-label="Abrir endpoint">${icon('external')}</a></div></section><div><span class="endpoint-url-label">Código de ejemplo</span><div class="code-tabs">${[['curl', 'cURL'], ['javascript', 'JavaScript'], ['typescript', 'TypeScript'], ['python', 'Python']].map(([key, label]) => `<button class="${state.endpointCodeTab === key ? 'is-active' : ''}" type="button" data-action="endpoint-code-tab" data-tab="${key}">${label}</button>`).join('')}</div></div><section class="code-window"><div class="code-window-top"><span><i class="traffic-lights"><i></i><i></i><i></i></i> example.${state.endpointCodeTab === 'python' ? 'py' : state.endpointCodeTab === 'curl' ? 'sh' : 'js'}</span><button class="btn btn-outline btn-small" type="button" data-action="copy-endpoint-code">${icon('copy')} Copiar</button></div><pre><code>${escapeHtml(codeSnippet(endpoint))}</code></pre></section><form id="endpoint-playground-form" class="endpoint-params"><h3>${icon('chart')} Parámetros de entrada</h3><label class="field"><span class="field-label">${escapeHtml(param.name)} <span class="red">*</span></span><input class="text-input" name="endpoint-value" required placeholder="${escapeHtml(param.placeholder)}" /></label><button class="btn btn-primary btn-full" type="submit">${icon('bolt')} Realizar petición</button><p class="field-hint" id="endpoint-playground-message">Prueba visual del formulario. Las llamadas al catálogo externo no se ejecutan desde este panel.</p></form></div>`;
   $('#endpoint-layer').hidden = false;
   document.body.classList.add('modal-open');
+}
+
+/* ── API funcional (/api/v1), cuentas y API keys ─────────────────
+ * Pestañas de la página de endpoints:
+ *   · Funcionales → endpoints reales de este servidor con playground
+ *   · Mis API Keys → crear (máx. 100 días), renovar y revocar claves
+ *   · Catálogo     → referencia del catálogo externo
+ *   · Owner        → solo para la cuenta owner
+ */
+
+const KEY_MAX_DAYS = 100;
+const apiOrigin = () => window.location.origin;
+const formatDate = (ts) => (ts ? new Date(ts).toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+const formatDateTime = (ts) => (ts ? new Date(ts).toLocaleString('es', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+
+/** Declaración de función (se eleva): `state` la usa antes de este bloque. */
+function endpointTabIds() { return ['functional', 'keys', 'catalog', 'owner']; }
+function initialEndpointTab() {
+  const hash = window.location.hash.replace('#', '').toLowerCase();
+  return endpointTabIds().includes(hash) ? hash : 'functional';
+}
+function localKeys() { const all = safeRead('sw_local_keys', {}); return all && typeof all === 'object' ? all : {}; }
+function rememberLocalKey(id, key) { const all = localKeys(); all[id] = key; safeWrite('sw_local_keys', all); }
+function forgetLocalKey(id) { const all = localKeys(); delete all[id]; safeWrite('sw_local_keys', all); }
+const isLoggedIn = () => Boolean(state.session && state.apiUser);
+
+function fnAll() { return (state.fn.categories || []).flatMap((category) => (category.items || []).map((item) => ({ ...item, category: category.name }))); }
+function fnByPath(path) { return fnAll().find((item) => item.path === path) || null; }
+function buildFnUrl(endpoint, params = {}, keyValue = '') {
+  const query = new URLSearchParams();
+  for (const param of endpoint.params || []) {
+    const value = params[param.name];
+    if (value !== undefined && String(value) !== '') query.set(param.name, value);
+  }
+  if (keyValue) query.set('key', keyValue);
+  const qs = query.toString();
+  return `${endpoint.path}${qs ? `?${qs}` : ''}`;
+}
+
+function endpointTabs() {
+  const tabs = [
+    ['functional', 'bolt', 'Funcionales', state.fn.total ? String(state.fn.total) : ''],
+    ['keys', 'key', 'Mis API Keys', isLoggedIn() ? String(state.apiKeys.filter((k) => k.status === 'active').length) : ''],
+    ['catalog', 'folder', 'Catálogo', ''],
+  ];
+  if (state.apiUser?.isOwner) tabs.push(['owner', 'crown', 'Owner', '']);
+  return `<div class="ep-tabs" role="tablist" aria-label="Secciones de endpoints">${tabs.map(([id, iconName, label, count]) => `<button type="button" role="tab" aria-selected="${state.endpointTab === id}" class="ep-tab ${state.endpointTab === id ? 'is-active' : ''}" data-action="endpoint-tab" data-tab="${id}">${icon(iconName)}<span>${label}</span>${count ? `<span class="ep-tab-count">${escapeHtml(count)}</span>` : ''}</button>`).join('')}</div>`;
+}
+
+function accountChip() {
+  if (!isLoggedIn()) {
+    return `<div class="account-chip"><button class="btn btn-outline btn-small" type="button" data-action="open-api-auth" data-mode="api-login">${icon('users')} Iniciar sesión</button><button class="btn btn-primary btn-small" type="button" data-action="open-api-auth" data-mode="api-register">${icon('plus')} Registrarse</button></div>`;
+  }
+  const user = state.apiUser;
+  return `<div class="account-chip"><span class="account-chip-user"><span class="account-avatar">${escapeHtml(initials(user.username))}</span><span><strong>${escapeHtml(user.username)}</strong><small>${escapeHtml(user.email)}</small></span>${user.isOwner ? '<span class="owner-badge">OWNER</span>' : ''}</span><button class="btn btn-outline btn-small" type="button" data-action="logout-account">Cerrar sesión</button></div>`;
+}
+
+function loginPromptCard(message) {
+  return `<section class="card fn-login-card"><span class="empty-state-icon">${icon('lock')}</span><h2>Inicia sesión para continuar</h2><p>${escapeHtml(message)}</p><div class="page-heading-actions"><button class="btn btn-outline" type="button" data-action="open-api-auth" data-mode="api-login">Iniciar sesión</button><button class="btn btn-primary" type="button" data-action="open-api-auth" data-mode="api-register">Crear cuenta gratis ${icon('arrow-right')}</button></div></section>`;
+}
+
+function fnKeyBox() {
+  if (!isLoggedIn()) {
+    return `<div class="fn-key-box"><strong>${icon('key')} Necesitas una API key</strong><p class="field-hint">Regístrate o inicia sesión y crea tu API key (válida hasta ${KEY_MAX_DAYS} días) para probar los endpoints.</p><div class="page-heading-actions"><button class="btn btn-primary btn-small" type="button" data-action="open-api-auth" data-mode="api-register">Crear cuenta</button><button class="btn btn-outline btn-small" type="button" data-action="open-api-auth" data-mode="api-login">Iniciar sesión</button></div></div>`;
+  }
+  const local = localKeys();
+  const usable = state.apiKeys.filter((key) => key.status === 'active' && local[key.id]);
+  const chips = usable.map((key) => `<button class="filter-chip ${state.fn.playKey === local[key.id] ? 'is-active' : ''}" type="button" data-action="use-local-key" data-id="${escapeHtml(key.id)}">${icon('key')} ${escapeHtml(key.name)}</button>`).join('');
+  return `<div class="fn-key-box"><label class="field"><span class="field-label">${icon('key')} API key para probar</span><input class="text-input mono-input" id="fn-key-input" type="text" value="${escapeHtml(state.fn.playKey)}" placeholder="vsk_…" autocomplete="off" spellcheck="false" /></label>${chips ? `<div class="filter-row">${chips}</div>` : `<p class="field-hint">Aún no tienes keys guardadas en este navegador. <a href="/endpoints#keys" data-action="endpoint-tab" data-tab="keys">Crea una aquí</a>.</p>`}</div>`;
+}
+
+function renderFnResult(path) {
+  if (state.fn.loading[path]) return `<div class="fn-result is-loading"><span class="loader-dot"></span> Ejecutando petición…</div>`;
+  const result = state.fn.results[path];
+  if (!result) return '';
+  const statusClass = result.ok ? '' : 'status-error';
+  const head = `<div class="fn-result-head"><span class="status-badge ${statusClass}">${result.status ? `HTTP ${result.status}` : 'Error'}</span>${result.ms != null ? `<span class="muted small">${result.ms} ms</span>` : ''}${result.size ? `<span class="muted small">${formatBytes(result.size)}</span>` : ''}</div>`;
+  if (result.image) return `<div class="fn-result">${head}<div class="fn-image"><img src="${escapeHtml(result.image)}" alt="Resultado del endpoint" /></div><a class="btn btn-outline btn-small" href="${escapeHtml(result.image)}" download="versova-${Date.now()}">${icon('arrow-right')} Descargar</a></div>`;
+  const body = result.json != null ? JSON.stringify(result.json, null, 2) : (result.error || 'Sin respuesta');
+  const hint = result.status === 401 ? `<p class="field-hint red">${escapeHtml(result.json?.error || 'API key no válida.')} ${isLoggedIn() ? 'Revisa la pestaña «Mis API Keys».' : 'Inicia sesión y crea una API key.'}</p>` : '';
+  return `<div class="fn-result">${head}${hint}<section class="code-window"><div class="code-window-top"><span><i class="traffic-lights"><i></i><i></i><i></i></i> respuesta.json</span><button class="btn btn-outline btn-small" type="button" data-action="fn-copy-result" data-path="${escapeHtml(path)}">${icon('copy')} Copiar</button></div><pre><code>${escapeHtml(body)}</code></pre></section></div>`;
+}
+
+function renderFnEndpoint(endpoint) {
+  const open = state.fn.open.has(endpoint.path);
+  const params = state.fn.params[endpoint.path] || {};
+  const isImage = endpoint.response === 'image';
+  const head = `<div class="fn-endpoint-head" role="button" tabindex="0" data-action="fn-toggle" data-path="${escapeHtml(endpoint.path)}" aria-expanded="${open}"><span class="fn-endpoint-icon" aria-hidden="true">${escapeHtml(endpoint.icon || '✦')}</span><span class="endpoint-row-main"><strong>${escapeHtml(endpoint.name)}</strong><code>${escapeHtml(endpoint.path)}</code></span><span class="method-badge">GET</span><span class="tier-badge ${isImage ? 'hybrid' : ''}">${isImage ? 'Imagen' : 'JSON'}</span>${icon('chevron')}</div>`;
+  if (!open) return `<article class="fn-endpoint">${head}</article>`;
+  const fields = (endpoint.params || []).map((param) => {
+    const value = params[param.name] ?? '';
+    const control = Array.isArray(param.options) && param.options.length
+      ? `<select class="select-input" name="${escapeHtml(param.name)}" data-fn-param="${escapeHtml(param.name)}" data-path="${escapeHtml(endpoint.path)}"><option value="">${param.required ? 'Elige…' : '(por defecto)'}</option>${param.options.map((option) => `<option value="${escapeHtml(option)}" ${String(value) === String(option) ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select>`
+      : `<input class="text-input" name="${escapeHtml(param.name)}" data-fn-param="${escapeHtml(param.name)}" data-path="${escapeHtml(endpoint.path)}" value="${escapeHtml(value)}" placeholder="${escapeHtml(param.example || param.description || '')}" ${param.required ? 'required' : ''} autocomplete="off" />`;
+    return `<label class="field"><span class="field-label"><code>${escapeHtml(param.name)}</code>${param.required ? ' <span class="red">*</span>' : ' <span class="muted small">opcional</span>'}</span>${control}${param.description ? `<span class="field-hint">${escapeHtml(param.description)}</span>` : ''}</label>`;
+  }).join('');
+  const shownUrl = `${apiOrigin()}${buildFnUrl(endpoint, params, 'TU_API_KEY')}`;
+  const code = `curl "${shownUrl}"\n\n// JavaScript\nconst res = await fetch("${apiOrigin()}${buildFnUrl(endpoint, params)}", {\n  headers: { "X-API-Key": "TU_API_KEY" }\n});\nconst data = await res.${isImage ? 'blob' : 'json'}();`;
+  return `<article class="fn-endpoint is-open">${head}<div class="fn-endpoint-body"><p class="section-copy fn-description">${escapeHtml(endpoint.description)}</p><form class="fn-form" data-path="${escapeHtml(endpoint.path)}" novalidate>${fields ? `<div class="fn-params">${fields}</div>` : '<p class="field-hint">Este endpoint no necesita parámetros.</p>'}<div class="fn-url"><span class="method-badge">GET</span><code data-fn-url="${escapeHtml(endpoint.path)}">${escapeHtml(shownUrl)}</code><button class="icon-button" type="button" data-action="fn-copy-url" data-path="${escapeHtml(endpoint.path)}" aria-label="Copiar URL">${icon('copy')}</button></div><div class="page-heading-actions"><button class="btn btn-outline btn-small" type="button" data-action="fn-example" data-path="${escapeHtml(endpoint.path)}">${icon('spark')} Rellenar ejemplo</button><button class="btn btn-primary btn-small" type="submit">${icon('bolt')} Probar endpoint</button></div></form>${renderFnResult(endpoint.path)}<details class="fn-code"><summary>${icon('code')} Código de ejemplo</summary><section class="code-window"><div class="code-window-top"><span>ejemplo</span><button class="btn btn-outline btn-small" type="button" data-action="fn-copy-code" data-path="${escapeHtml(endpoint.path)}">${icon('copy')} Copiar</button></div><pre><code>${escapeHtml(code)}</code></pre></section></details></div></article>`;
+}
+
+function renderFnResults() {
+  const query = state.fn.query.trim().toLowerCase();
+  const categories = (state.fn.categories || []).map((category) => ({
+    ...category,
+    items: (category.items || []).filter((item) => !query || `${item.name} ${item.path} ${item.description} ${category.name}`.toLowerCase().includes(query)),
+  })).filter((category) => category.items.length);
+  if (!state.fn.categories.length) return `<div class="endpoint-empty card">${state.fn.error ? escapeHtml(state.fn.error) : 'Cargando endpoints…'}</div>`;
+  if (!categories.length) return '<div class="endpoint-empty card">No hay endpoints que coincidan con tu búsqueda.</div>';
+  return categories.map((category) => `<section class="fn-category"><h3 class="fn-category-title"><span aria-hidden="true">${escapeHtml(category.icon || '✦')}</span> ${escapeHtml(category.name)} <span class="endpoint-count">${category.items.length}</span></h3><div class="fn-list">${category.items.map(renderFnEndpoint).join('')}</div></section>`).join('');
+}
+
+function renderFunctionalTab() {
+  return `<section class="card fn-hero"><div class="fn-hero-copy"><span class="live-badge"><i></i> En vivo</span><h2>${formatNumber(state.fn.total || 0)} endpoints que funcionan de verdad</h2><p>Se ejecutan en este mismo servidor, sin servicios externos. Envía tu API key como <code>?key=</code> o en la cabecera <code>X-API-Key</code>. Límite: 60 peticiones/minuto por key.</p><div class="profile-key"><code>${escapeHtml(apiOrigin())}/api/v1</code><button class="icon-button" type="button" data-action="copy-api-base" aria-label="Copiar URL base">${icon('copy')}</button></div></div>${fnKeyBox()}</section>
+    <div class="catalog-toolbar"><label class="search-box">${icon('search')}<input id="fn-search" class="text-input" type="search" value="${escapeHtml(state.fn.query)}" placeholder="Buscar endpoint funcional… (ej: QR, base64, ship)" autocomplete="off" /></label></div>
+    <div id="fn-results">${renderFnResults()}</div>`;
+}
+
+function keyStatusBadge(key) {
+  if (key.status === 'active') return `<span class="status-badge">Activa</span>`;
+  if (key.status === 'expired') return `<span class="status-badge status-offline">Caducada</span>`;
+  return `<span class="status-badge status-error">Revocada</span>`;
+}
+
+function renderKeyRow(key) {
+  const local = localKeys()[key.id];
+  const renew = key.status !== 'revoked' ? `<span class="key-renew"><select class="select-input select-small" data-renew-id="${escapeHtml(key.id)}" aria-label="Días de renovación">${[7, 15, 30, 60, 90, 100].map((days) => `<option value="${days}" ${days === 30 ? 'selected' : ''}>${days} días</option>`).join('')}</select><button class="btn btn-outline btn-small" type="button" data-action="renew-key" data-id="${escapeHtml(key.id)}">${icon('refresh')} Renovar</button></span>` : '';
+  return `<article class="key-row ${key.status !== 'active' ? 'is-inactive' : ''}"><div class="key-row-main"><span class="key-row-title"><strong>${escapeHtml(key.name)}</strong>${keyStatusBadge(key)}</span><code>${escapeHtml(key.prefix)}</code><small class="muted">Creada ${formatDate(key.createdAt)} · ${key.status === 'active' ? `caduca ${formatDate(key.expiresAt)} (faltan ${key.daysLeft} día${key.daysLeft === 1 ? '' : 's'})` : key.status === 'expired' ? `caducó ${formatDate(key.expiresAt)}` : `revocada ${formatDate(key.revokedAt)}`} · ${formatNumber(key.requests)} peticiones${key.lastUsedAt ? ` · último uso ${formatDateTime(key.lastUsedAt)}` : ''}</small></div><div class="key-row-actions">${local && key.status === 'active' ? `<button class="btn btn-outline btn-small" type="button" data-action="use-local-key" data-id="${escapeHtml(key.id)}" data-goto="functional">${icon('bolt')} Usar</button><button class="icon-button" type="button" data-action="copy-local-key" data-id="${escapeHtml(key.id)}" aria-label="Copiar API key">${icon('copy')}</button>` : ''}${renew}${key.status !== 'revoked' ? `<button class="btn btn-danger btn-small" type="button" data-action="revoke-key" data-id="${escapeHtml(key.id)}">Revocar</button>` : ''}</div></article>`;
+}
+
+function renderKeysTab() {
+  if (!isLoggedIn()) return loginPromptCard(`Crea tu cuenta gratis o inicia sesión para generar API keys (vigencia máxima de ${KEY_MAX_DAYS} días) y usar los endpoints funcionales.`);
+  const usage = state.account?.usage || {};
+  const limits = state.account?.limits || {};
+  const days = Number(state.keyForm.days) || 30;
+  const newKey = state.newApiKey ? `<section class="card new-key-banner"><div><span class="section-kicker">${icon('check')} API key creada</span><h3>${escapeHtml(state.newApiKey.record.name)}</h3><p class="field-hint">Cópiala ahora: por seguridad el servidor solo guarda su hash y <strong>no se volverá a mostrar</strong>. Queda guardada en este navegador para el playground hasta que cierres sesión.</p></div><div class="profile-key"><code>${escapeHtml(state.newApiKey.key)}</code><button class="icon-button" type="button" data-action="copy-new-key" aria-label="Copiar API key">${icon('copy')}</button></div><div class="page-heading-actions"><button class="btn btn-primary btn-small" type="button" data-action="endpoint-tab" data-tab="functional">${icon('bolt')} Probar endpoints</button><button class="btn btn-outline btn-small" type="button" data-action="dismiss-new-key">Ya la guardé</button></div></section>` : '';
+  const keys = state.apiKeys.length ? state.apiKeys.map(renderKeyRow).join('') : `<div class="ticket-empty">${icon('key')}<strong>Todavía no tienes API keys</strong><p>Crea la primera con el formulario de arriba.</p></div>`;
+  const recent = state.keyUsage?.recent || [];
+  const usageRows = recent.length ? recent.slice(0, 15).map((row) => `<div class="usage-row"><code>${escapeHtml(row.endpoint)}</code><span class="status-badge ${row.status >= 400 ? 'status-error' : ''}">${row.status}</span><span class="muted small">${escapeHtml(row.keyName || '—')}</span><span class="muted small">${row.durationMs} ms · ${formatDateTime(row.createdAt)}</span></div>`).join('') : '<p class="field-hint">Aún no hay peticiones registradas.</p>';
+  return `<div class="ticket-stats"><article class="card ticket-stat"><span class="stat-icon">${icon('key')}</span><strong>${formatNumber(usage.activeKeys ?? 0)}<small class="muted"> / ${limits.maxActiveKeys ?? 5}</small></strong><span>Keys activas</span></article><article class="card ticket-stat"><span class="stat-icon">${icon('bolt')}</span><strong class="purple">${formatNumber(usage.total ?? 0)}</strong><span>Peticiones totales</span></article><article class="card ticket-stat"><span class="stat-icon">${icon('clock')}</span><strong class="blue">${formatNumber(usage.last24h ?? 0)}</strong><span>Últimas 24 h</span></article><article class="card ticket-stat"><span class="stat-icon">${icon('shield')}</span><strong class="green">${limits.rateLimitPerMinute ? `${limits.rateLimitPerMinute}/min` : 'Sin límite'}</strong><span>Límite de uso</span></article></div>
+    ${newKey}
+    <form id="api-key-form" class="card profile-card key-form"><h2>${icon('plus')} Crear API key</h2><div class="key-form-grid"><label class="field"><span class="field-label">Nombre</span><input class="text-input" name="key-name" data-key-form="name" value="${escapeHtml(state.keyForm.name)}" maxlength="40" placeholder="Mi bot de WhatsApp" autocomplete="off" /></label><label class="field"><span class="field-label">Vigencia (días)</span><input class="text-input" name="key-days" data-key-form="days" type="number" min="1" max="${KEY_MAX_DAYS}" step="1" value="${escapeHtml(state.keyForm.days)}" required /></label></div><div class="filter-row">${[7, 30, 60, 100].map((option) => `<button class="filter-chip ${days === option ? 'is-active' : ''}" type="button" data-action="key-days" data-days="${option}">${option} días</button>`).join('')}</div><p class="field-hint">Máximo ${KEY_MAX_DAYS} días. Caducará el <strong id="key-expiry-preview">${formatDate(Date.now() + Math.min(Math.max(days, 1), KEY_MAX_DAYS) * 86_400_000)}</strong>; después deja de funcionar y puedes renovarla.</p><p class="modal-error" id="api-key-error" aria-live="polite"></p><button class="btn btn-primary" type="submit">${icon('key')} Crear API key</button></form>
+    <section class="section-block" style="margin-top:22px"><div class="section-heading"><div><span class="section-kicker">${icon('key')} Tus claves</span><h2 class="section-title" style="font-size:24px">API keys</h2></div><button class="btn btn-outline btn-small" type="button" data-action="reload-keys">${icon('refresh')} Actualizar</button></div><div class="key-list">${keys}</div></section>
+    <section class="section-block"><div class="section-heading"><div><span class="section-kicker">${icon('chart')} Actividad</span><h2 class="section-title" style="font-size:24px">Últimas peticiones</h2></div></div><div class="card usage-card">${usageRows}</div></section>`;
+}
+
+function renderOwnerTab() {
+  if (!state.apiUser?.isOwner) return loginPromptCard('Esta sección es solo para el owner.');
+  const data = state.owner;
+  if (!data) return '<div class="endpoint-empty card">Cargando panel del owner…</div>';
+  const totals = data.totals || {};
+  const users = (data.users || []).map((user) => `<div class="owner-row"><span class="account-avatar">${escapeHtml(initials(user.username))}</span><span class="owner-row-main"><strong>${escapeHtml(user.username)} ${user.isOwner ? '<span class="owner-badge">OWNER</span>' : ''}</strong><small class="muted">${escapeHtml(user.email)} · desde ${formatDate(user.createdAt)}</small></span><span class="muted small">${user.activeKeys} keys · ${formatNumber(user.requests)} pet.</span>${user.isOwner ? '' : `<button class="btn btn-danger btn-small" type="button" data-action="owner-delete-user" data-id="${escapeHtml(user.id)}" data-name="${escapeHtml(user.email)}">Eliminar</button>`}</div>`).join('') || '<p class="field-hint">No hay usuarios.</p>';
+  const keys = (data.keys || []).slice(0, 60).map((key) => `<div class="owner-row"><span class="owner-row-main"><strong>${escapeHtml(key.name)} ${keyStatusBadge(key)}</strong><small class="muted"><code>${escapeHtml(key.prefix)}</code> · ${escapeHtml(key.email)} · caduca ${formatDate(key.expiresAt)}</small></span><span class="muted small">${formatNumber(key.requests)} pet.</span>${key.status !== 'revoked' ? `<button class="btn btn-danger btn-small" type="button" data-action="owner-revoke-key" data-id="${escapeHtml(key.id)}" data-name="${escapeHtml(key.name)}">Revocar</button>` : ''}</div>`).join('') || '<p class="field-hint">No hay API keys.</p>';
+  const top = (data.topEndpoints || []).map((row) => `<div class="usage-row"><code>${escapeHtml(row.endpoint)}</code><strong>${formatNumber(row.count)}</strong></div>`).join('') || '<p class="field-hint">Sin uso todavía.</p>';
+  return `<div class="ticket-stats"><article class="card ticket-stat"><span class="stat-icon">${icon('users')}</span><strong>${formatNumber(totals.users ?? 0)}</strong><span>Usuarios</span></article><article class="card ticket-stat"><span class="stat-icon">${icon('key')}</span><strong class="purple">${formatNumber(totals.activeKeys ?? 0)}</strong><span>Keys activas</span></article><article class="card ticket-stat"><span class="stat-icon">${icon('bolt')}</span><strong class="blue">${formatNumber(totals.requests ?? 0)}</strong><span>Peticiones</span></article><article class="card ticket-stat"><span class="stat-icon">${icon('clock')}</span><strong class="green">${formatNumber(totals.requests24h ?? 0)}</strong><span>Últimas 24 h</span></article></div>
+    <div class="owner-grid"><section class="card profile-card"><div class="section-heading"><h2>${icon('users')} Usuarios</h2><button class="btn btn-outline btn-small" type="button" data-action="reload-owner">${icon('refresh')} Actualizar</button></div><div class="owner-list">${users}</div></section><section class="card profile-card"><h2>${icon('key')} API keys</h2><div class="owner-list">${keys}</div></section><section class="card profile-card"><h2>${icon('chart')} Endpoints más usados</h2>${top}</section></div>`;
+}
+
+async function loadFunctionalCatalog() {
+  try {
+    const data = await request('/v1', { apiKey: false });
+    state.fn.categories = Array.isArray(data.categories) ? data.categories : [];
+    state.fn.total = data.total || fnAll().length;
+    state.fn.error = '';
+  } catch (error) {
+    state.fn.error = `No se pudo cargar la API funcional: ${error.message}`;
+  }
+  if (state.view === 'endpoints') renderPage();
+}
+
+async function loadApiKeys({ quiet = true } = {}) {
+  if (!state.session) return;
+  try {
+    const [keys, usage] = await Promise.all([request('/account/keys', { apiKey: false }), request('/account/usage', { apiKey: false })]);
+    state.apiKeys = keys.keys || [];
+    state.keyUsage = usage;
+    // keys locales de claves revocadas/borradas: fuera del navegador
+    const ids = new Set(state.apiKeys.filter((key) => key.status !== 'revoked').map((key) => key.id));
+    for (const id of Object.keys(localKeys())) if (!ids.has(id)) forgetLocalKey(id);
+  } catch (error) {
+    if (error.status === 401) return handleSessionExpired();
+    if (!quiet) showToast(error.message || 'No se pudieron cargar tus API keys', 'error');
+  }
+  if (state.view === 'endpoints') renderPage();
+}
+
+async function loadOwnerOverview() {
+  if (!state.apiUser?.isOwner) return;
+  try {
+    state.owner = await request('/account/owner/overview', { apiKey: false });
+  } catch (error) {
+    showToast(error.message || 'No se pudo cargar el panel del owner', 'error');
+  }
+  if (state.view === 'endpoints') renderPage();
+}
+
+function handleSessionExpired() {
+  state.session = null;
+  state.apiUser = null;
+  state.account = null;
+  state.apiKeys = [];
+  state.owner = null;
+  try { localStorage.removeItem('sw_session'); localStorage.removeItem('sw_user'); } catch {}
+  showToast('Tu sesión caducó. Vuelve a iniciar sesión.', 'info');
+  renderPage({ force: true });
+}
+
+async function logoutAccount() {
+  try { await request('/account/logout', { method: 'POST', apiKey: false }); } catch { /* ya caducada */ }
+  state.session = null;
+  state.apiUser = null;
+  state.account = null;
+  state.apiKeys = [];
+  state.keyUsage = null;
+  state.owner = null;
+  state.newApiKey = null;
+  state.fn.playKey = '';
+  try { ['sw_session', 'sw_user', 'sw_local_keys', 'sw_play_key'].forEach((key) => localStorage.removeItem(key)); } catch {}
+  if (state.endpointTab === 'owner') state.endpointTab = 'functional';
+  showToast('Sesión cerrada', 'success');
+  renderPage({ force: true });
+}
+
+function setEndpointTab(tab) {
+  if (!endpointTabIds().includes(tab)) tab = 'functional';
+  if (tab === 'owner' && !state.apiUser?.isOwner) tab = 'functional';
+  state.endpointTab = tab;
+  if (state.view !== 'endpoints') navigate('endpoints');
+  window.history.replaceState({ view: 'endpoints' }, '', `/endpoints${tab === 'functional' ? '' : `#${tab}`}`);
+  renderPage({ force: true });
+  if (tab === 'keys') loadApiKeys();
+  if (tab === 'owner') loadOwnerOverview();
+}
+
+async function createApiKeyFromForm(form) {
+  const errorBox = $('#api-key-error');
+  if (errorBox) errorBox.textContent = '';
+  const data = new FormData(form);
+  const days = Number(data.get('key-days'));
+  const name = String(data.get('key-name') || '').trim();
+  if (!Number.isInteger(days) || days < 1) { if (errorBox) errorBox.textContent = 'La vigencia debe ser un número entero de días (mínimo 1).'; return; }
+  if (days > KEY_MAX_DAYS) { if (errorBox) errorBox.textContent = `La vigencia máxima es de ${KEY_MAX_DAYS} días.`; return; }
+  try {
+    const result = await request('/account/keys', { method: 'POST', body: { name, days }, apiKey: false });
+    state.newApiKey = { key: result.key, record: result.apiKey };
+    rememberLocalKey(result.apiKey.id, result.key);
+    state.fn.playKey = result.key;
+    safeWrite('sw_play_key', result.key);
+    state.keyForm = { name: '', days: 30 };
+    showToast(result.message || 'API key creada', 'success');
+    await Promise.all([loadApiKeys(), loadApiAccount()]);
+    renderPage({ force: true });
+  } catch (error) {
+    if (error.status === 401) return handleSessionExpired();
+    if (errorBox) errorBox.textContent = error.message || 'No se pudo crear la API key.';
+  }
+}
+
+async function runFunctional(path) {
+  const endpoint = fnByPath(path);
+  if (!endpoint) return;
+  const key = String(state.fn.playKey || '').trim();
+  if (!key) {
+    showToast(isLoggedIn() ? 'Crea o elige una API key para probar el endpoint.' : 'Inicia sesión y crea una API key para probar los endpoints.', 'info');
+    if (!isLoggedIn()) { state.authMode = 'api-register'; openAuth(); } else setEndpointTab('keys');
+    return;
+  }
+  const params = state.fn.params[path] || {};
+  const missing = (endpoint.params || []).filter((param) => param.required && !String(params[param.name] ?? '').trim());
+  if (missing.length) {
+    state.fn.results[path] = { ok: false, status: 0, error: `Faltan parámetros obligatorios: ${missing.map((param) => param.name).join(', ')}` };
+    renderPage({ force: true });
+    return;
+  }
+  state.fn.loading[path] = true;
+  renderPage({ force: true });
+  const started = performance.now();
+  let result;
+  try {
+    const response = await fetch(buildFnUrl(endpoint, params), { headers: { 'X-API-Key': key } });
+    const ms = Math.round(performance.now() - started);
+    const type = response.headers.get('content-type') || '';
+    if (type.startsWith('image/')) {
+      const blob = await response.blob();
+      result = { ok: response.ok, status: response.status, ms, image: URL.createObjectURL(blob), size: blob.size };
+    } else {
+      const json = await response.json().catch(() => ({ ok: false, error: `Error ${response.status}` }));
+      result = { ok: response.ok, status: response.status, ms, json };
+    }
+  } catch (error) {
+    result = { ok: false, status: 0, error: `No se pudo conectar: ${error.message}` };
+  }
+  const previous = state.fn.results[path];
+  if (previous?.image) URL.revokeObjectURL(previous.image);
+  state.fn.results[path] = result;
+  state.fn.loading[path] = false;
+  renderPage({ force: true });
+}
+
+function updateFnUrlPreview(path) {
+  const endpoint = fnByPath(path);
+  const target = document.querySelector(`[data-fn-url="${CSS.escape(path)}"]`);
+  if (endpoint && target) target.textContent = `${apiOrigin()}${buildFnUrl(endpoint, state.fn.params[path] || {}, 'TU_API_KEY')}`;
 }
 
 /* ── tickets (guardados en la base de datos) ────────────────── */
@@ -1039,6 +1365,7 @@ function navigate(view, { replace = false } = {}) {
   if (view === 'store') loadPlans({ quiet: true });
   if (view === 'tickets') loadTickets();
   if (view === 'profile') loadSystem({ quiet: true });
+  if (view === 'endpoints' && state.session) loadApiKeys();
 }
 
 function openDrawer() {
@@ -1069,6 +1396,7 @@ function openAuth() {
 }
 function closeModal() {
   const layer = document.querySelector('#modal-layer');
+  if (layer?.contains?.(document.activeElement)) document.activeElement.blur?.();
   if (layer) layer.hidden = true;
   state.connectTarget = null;
   state.editTarget = null;
@@ -1099,7 +1427,7 @@ function openConfirm({ title, message, confirmLabel = 'Confirmar', onConfirm, da
 function renderAuthModal() {
   const isRegister = state.authMode === 'api-register';
   const content = $('#modal-content');
-  content.innerHTML = `<button class="icon-button modal-close" type="button" data-action="close-modal" aria-label="Cerrar">${icon('close')}</button><div class="modal-brand">${brandMarkup()}</div><span class="section-kicker">${icon('users')} Mi cuenta</span><h2 id="modal-title" style="margin-top:11px">${isRegister ? 'Crea tu cuenta' : 'Inicia sesión'}</h2><p class="modal-description">Guarda tus créditos y accede a tu API key desde cualquier dispositivo.</p><div class="modal-tabs"><button type="button" class="${!isRegister ? 'is-active' : ''}" data-action="auth-mode" data-mode="api-login">Iniciar sesión</button><button type="button" class="${isRegister ? 'is-active' : ''}" data-action="auth-mode" data-mode="api-register">Crear cuenta</button></div><form class="modal-form" id="api-auth-form"><label class="field"><span class="field-label">Email</span><input class="text-input" name="email" type="email" required autocomplete="email" placeholder="tu@email.com" /></label>${isRegister ? `<label class="field"><span class="field-label">Nombre de usuario</span><input class="text-input" name="username" type="text" required maxlength="32" autocomplete="username" placeholder="tu_usuario" /></label>` : ''}<label class="field"><span class="field-label">Contraseña</span><input class="text-input" name="password" type="password" required minlength="6" autocomplete="${isRegister ? 'new-password' : 'current-password'}" placeholder="${isRegister ? 'Mínimo 6 caracteres' : 'Tu contraseña'}" /></label><p class="modal-error" id="api-auth-error" aria-live="polite"></p><button class="btn btn-primary btn-full" type="submit">${isRegister ? 'Crear cuenta' : 'Iniciar sesión'} ${icon('arrow-right')}</button></form><p class="modal-switch">La cuenta es solo para la tienda de créditos.</p>`;
+  content.innerHTML = `<button class="icon-button modal-close" type="button" data-action="close-modal" aria-label="Cerrar">${icon('close')}</button><div class="modal-brand">${brandMarkup()}</div><span class="section-kicker">${icon('users')} Mi cuenta</span><h2 id="modal-title" style="margin-top:11px">${isRegister ? 'Crea tu cuenta' : 'Inicia sesión'}</h2><p class="modal-description">Con tu cuenta creas API keys (hasta ${KEY_MAX_DAYS} días) para los endpoints funcionales y guardas tus créditos.</p><div class="modal-tabs"><button type="button" class="${!isRegister ? 'is-active' : ''}" data-action="auth-mode" data-mode="api-login">Iniciar sesión</button><button type="button" class="${isRegister ? 'is-active' : ''}" data-action="auth-mode" data-mode="api-register">Crear cuenta</button></div><form class="modal-form" id="api-auth-form"><label class="field"><span class="field-label">Email</span><input class="text-input" name="email" type="email" required autocomplete="email" placeholder="tu@email.com" /></label>${isRegister ? `<label class="field"><span class="field-label">Nombre de usuario</span><input class="text-input" name="username" type="text" required minlength="3" maxlength="32" autocomplete="username" placeholder="tu_usuario" /></label>` : ''}<label class="field"><span class="field-label">Contraseña</span><input class="text-input" name="password" type="password" required minlength="${isRegister ? 8 : 1}" maxlength="200" autocomplete="${isRegister ? 'new-password' : 'current-password'}" placeholder="${isRegister ? 'Mínimo 8 caracteres' : 'Tu contraseña'}" /></label><p class="modal-error" id="api-auth-error" aria-live="polite"></p><button class="btn btn-primary btn-full" type="submit">${isRegister ? 'Crear cuenta' : 'Iniciar sesión'} ${icon('arrow-right')}</button></form><p class="modal-switch">${isRegister ? 'Al registrarte recibes 50 créditos de bienvenida.' : '¿No tienes cuenta? Pulsa «Crear cuenta».'}</p>`;
 }
 
 function showToast(message, type = 'info') {
@@ -1728,14 +2056,25 @@ async function loadTickets() {
   } catch { /* sin tickets */ }
 }
 async function loadApiAccount() {
-  if (!state.apiUser?.apiKey) return;
-  try {
-    const data = await request('/credits/me', { apiKey: true });
-    if (data.ok) {
-      state.apiUser = { ...state.apiUser, ...data.user, apiKey: state.apiUser.apiKey || data.user.api_key };
-      safeWrite('sw_user', state.apiUser);
+  if (state.session) {
+    try {
+      const data = await request('/account/me', { apiKey: false });
+      if (data.ok) {
+        state.apiUser = data.user;
+        state.account = { usage: data.usage, limits: data.limits };
+        safeWrite('sw_user', state.apiUser);
+      }
+    } catch (error) {
+      if (error.status === 401) {
+        state.session = null;
+        state.apiUser = null;
+        try { localStorage.removeItem('sw_session'); localStorage.removeItem('sw_user'); } catch {}
+      }
     }
-  } catch {
+    return;
+  }
+  // cuentas antiguas sin sesión: se pide iniciar sesión de nuevo
+  if (state.apiUser) {
     state.apiUser = null;
     try { localStorage.removeItem('sw_user'); } catch {}
   }
@@ -1746,24 +2085,35 @@ async function submitApiAuth(form) {
   if (errorBox) errorBox.textContent = '';
   const formData = new FormData(form);
   const isRegister = state.authMode === 'api-register';
-  const body = { email: formData.get('email'), password: formData.get('password') };
-  if (isRegister) body.username = formData.get('username');
+  const body = { email: String(formData.get('email') || '').trim(), password: formData.get('password') };
+  if (isRegister) body.username = String(formData.get('username') || '').trim();
+  if (isRegister && String(body.password || '').length < 8) {
+    if (errorBox) errorBox.textContent = 'La contraseña debe tener al menos 8 caracteres.';
+    return;
+  }
+  const button = form.querySelector('button[type="submit"]');
+  if (button) button.disabled = true;
   try {
-    const data = await request(`/credits/${isRegister ? 'register' : 'login'}`, { method: 'POST', body, apiKey: false });
-    if (!data.ok || !data.user) throw new Error(data.error || 'No se pudo acceder a la cuenta.');
-    state.apiUser = { ...data.user, apiKey: data.user.apiKey || data.user.api_key };
-    safeWrite('sw_user', state.apiUser);
+    const data = await request(`/account/${isRegister ? 'register' : 'login'}`, { method: 'POST', body, apiKey: false });
+    if (!data.ok || !data.user || !data.token) throw new Error(data.error || 'No se pudo acceder a la cuenta.');
+    state.session = data.token;
+    state.apiUser = data.user;
+    safeWrite('sw_session', data.token);
+    safeWrite('sw_user', data.user);
     closeModal();
-    showToast(isRegister ? '¡Cuenta creada! Recibiste 50 créditos.' : 'Sesión iniciada correctamente', 'success');
-    await loadApiAccount();
+    showToast(isRegister ? `¡Cuenta creada${data.user.isOwner ? ' (owner)' : ''}! Ya puedes crear tu API key.` : `Sesión iniciada${data.user.isOwner ? ' como owner' : ''}`, 'success');
+    await Promise.allSettled([loadApiAccount(), loadApiKeys()]);
     if (state.pendingPlan) {
       const plan = state.pendingPlan;
       state.pendingPlan = '';
       await purchasePlan(plan);
     }
-    renderPage();
+    if (state.view === 'endpoints' && isRegister && !state.apiKeys.length) state.endpointTab = 'keys';
+    renderPage({ force: true });
   } catch (error) {
     if (errorBox) errorBox.textContent = error.message || 'No se pudo acceder a la cuenta.';
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 
@@ -1895,7 +2245,104 @@ function handleClick(event) {
   else if (action === 'toggle-landing-menu') $('.header-links')?.classList.toggle('mobile-open');
   else if (action === 'notifications') showToast('No tienes notificaciones nuevas.', 'info');
   else if (action === 'channel-link') { event.preventDefault(); showToast('Consulta el canal oficial de Stellar Wa.', 'info'); }
-  else if (action === 'open-api-auth') openAuth();
+  else if (action === 'open-api-auth') {
+    if (actionTarget.dataset.mode) state.authMode = actionTarget.dataset.mode;
+    openAuth();
+  }
+  else if (action === 'endpoint-tab') { event.preventDefault(); setEndpointTab(actionTarget.dataset.tab); }
+  else if (action === 'logout-account') logoutAccount();
+  else if (action === 'fn-toggle') {
+    const path = actionTarget.dataset.path;
+    if (state.fn.open.has(path)) state.fn.open.delete(path); else state.fn.open.add(path);
+    renderPage({ force: true });
+  }
+  else if (action === 'fn-example') {
+    const endpoint = fnByPath(actionTarget.dataset.path);
+    if (endpoint) {
+      state.fn.params[endpoint.path] = Object.fromEntries((endpoint.params || []).filter((param) => param.example !== '').map((param) => [param.name, param.example]));
+      renderPage({ force: true });
+    }
+  }
+  else if (action === 'fn-copy-url') {
+    const endpoint = fnByPath(actionTarget.dataset.path);
+    if (endpoint) copyText(`${apiOrigin()}${buildFnUrl(endpoint, state.fn.params[endpoint.path] || {}, state.fn.playKey || 'TU_API_KEY')}`, 'URL copiada');
+  }
+  else if (action === 'fn-copy-code') {
+    const code = actionTarget.closest('.code-window')?.querySelector('pre')?.textContent;
+    if (code) copyText(code, 'Código copiado');
+  }
+  else if (action === 'fn-copy-result') {
+    const result = state.fn.results[actionTarget.dataset.path];
+    if (result?.json) copyText(JSON.stringify(result.json, null, 2), 'Respuesta copiada');
+  }
+  else if (action === 'copy-api-base') copyText(`${apiOrigin()}/api/v1`, 'URL base copiada');
+  else if (action === 'use-local-key') {
+    const key = localKeys()[actionTarget.dataset.id];
+    if (key) {
+      state.fn.playKey = key;
+      safeWrite('sw_play_key', key);
+      showToast('API key seleccionada para probar', 'success');
+      if (actionTarget.dataset.goto) setEndpointTab(actionTarget.dataset.goto); else renderPage({ force: true });
+    }
+  }
+  else if (action === 'copy-local-key') { const key = localKeys()[actionTarget.dataset.id]; if (key) copyText(key, 'API key copiada'); }
+  else if (action === 'copy-new-key') { if (state.newApiKey) copyText(state.newApiKey.key, 'API key copiada'); }
+  else if (action === 'dismiss-new-key') { state.newApiKey = null; renderPage({ force: true }); }
+  else if (action === 'key-days') {
+    state.keyForm.days = Number(actionTarget.dataset.days) || 30;
+    renderPage({ force: true });
+  }
+  else if (action === 'reload-keys') { loadApiKeys({ quiet: false }); loadApiAccount().then(() => renderPage()); }
+  else if (action === 'reload-owner') loadOwnerOverview();
+  else if (action === 'renew-key') {
+    const id = actionTarget.dataset.id;
+    const select = document.querySelector(`[data-renew-id="${CSS.escape(id)}"]`);
+    const days = Math.min(KEY_MAX_DAYS, Math.max(1, Number(select?.value) || 30));
+    request(`/account/keys/${encodeURIComponent(id)}/renew`, { method: 'POST', body: { days }, apiKey: false })
+      .then(() => { showToast(`API key renovada: caduca en ${days} días`, 'success'); return loadApiKeys(); })
+      .catch((error) => (error.status === 401 ? handleSessionExpired() : showToast(error.message || 'No se pudo renovar', 'error')));
+  }
+  else if (action === 'revoke-key') {
+    const id = actionTarget.dataset.id;
+    const key = state.apiKeys.find((entry) => entry.id === id);
+    openConfirm({
+      title: 'Revocar API key',
+      message: `La key «${key?.name || id}» dejará de funcionar inmediatamente. Esta acción no se puede deshacer.`,
+      confirmLabel: 'Revocar',
+      onConfirm: async () => {
+        try {
+          await request(`/account/keys/${encodeURIComponent(id)}`, { method: 'DELETE', apiKey: false });
+          const local = localKeys()[id];
+          if (local && state.fn.playKey === local) { state.fn.playKey = ''; safeWrite('sw_play_key', ''); }
+          forgetLocalKey(id);
+          if (state.newApiKey?.record?.id === id) state.newApiKey = null;
+          showToast('API key revocada', 'success');
+          await Promise.all([loadApiKeys(), loadApiAccount()]);
+          renderPage({ force: true });
+        } catch (error) {
+          showToast(error.message || 'No se pudo revocar', 'error');
+        }
+      },
+    });
+  }
+  else if (action === 'owner-revoke-key' || action === 'owner-delete-user') {
+    const id = actionTarget.dataset.id;
+    const isUser = action === 'owner-delete-user';
+    openConfirm({
+      title: isUser ? 'Eliminar usuario' : 'Revocar API key',
+      message: isUser ? `Se eliminará la cuenta ${actionTarget.dataset.name} con todas sus API keys.` : `La key «${actionTarget.dataset.name}» dejará de funcionar inmediatamente.`,
+      confirmLabel: isUser ? 'Eliminar' : 'Revocar',
+      onConfirm: async () => {
+        try {
+          await request(`/account/owner/${isUser ? 'users' : 'keys'}/${encodeURIComponent(id)}`, { method: 'DELETE', apiKey: false });
+          showToast(isUser ? 'Usuario eliminado' : 'API key revocada', 'success');
+          await loadOwnerOverview();
+        } catch (error) {
+          showToast(error.message || 'No se pudo completar la acción', 'error');
+        }
+      },
+    });
+  }
   else if (action === 'auth-mode') { state.authMode = actionTarget.dataset.mode; renderAuthModal(); }
   else if (action === 'wizard-next') nextWizardStep();
   else if (action === 'wizard-back') previousWizardStep();
@@ -2070,6 +2517,28 @@ function handleInput(event) {
     state.flow.error = '';
   }
   if (target.id === 'endpoint-search') { state.endpointQuery = target.value; updateEndpointSearch(); }
+  if (target.id === 'fn-search') {
+    state.fn.query = target.value;
+    const list = $('#fn-results');
+    if (list) list.innerHTML = renderFnResults();
+  }
+  if (target.matches?.('[data-fn-param]')) {
+    const path = target.dataset.path;
+    state.fn.params[path] = { ...(state.fn.params[path] || {}), [target.dataset.fnParam]: target.value };
+    updateFnUrlPreview(path);
+  }
+  if (target.id === 'fn-key-input') {
+    state.fn.playKey = target.value.trim();
+    safeWrite('sw_play_key', state.fn.playKey);
+  }
+  if (target.matches?.('[data-key-form]')) {
+    state.keyForm[target.dataset.keyForm] = target.value;
+    if (target.dataset.keyForm === 'days') {
+      const days = Number(target.value);
+      const preview = $('#key-expiry-preview');
+      if (preview) preview.textContent = Number.isInteger(days) && days >= 1 && days <= KEY_MAX_DAYS ? formatDate(Date.now() + days * 86_400_000) : `máximo ${KEY_MAX_DAYS} días`;
+    }
+  }
   if (target.id === 'endpoint-category') { state.endpointCategory = target.value; updateEndpointSearch(); }
   if (target.id === 'ticket-search') {
     const query = target.value.toLowerCase();
@@ -2175,6 +2644,8 @@ function handleSubmit(event) {
   const form = event.target;
   if (!(form instanceof HTMLFormElement)) return;
   if (form.id === 'api-auth-form') { event.preventDefault(); submitApiAuth(form); }
+  else if (form.id === 'api-key-form') { event.preventDefault(); createApiKeyFromForm(form); }
+  else if (form.classList?.contains('fn-form')) { event.preventDefault(); runFunctional(form.dataset.path); }
   else if (form.id === 'edit-instance-form') {
     event.preventDefault();
     return submitEditInstance(form);
@@ -2239,7 +2710,7 @@ function handleKeydown(event) {
     const search = document.querySelector('#endpoint-search, #ticket-search, #command-search');
     if (search) { event.preventDefault(); search.focus(); }
   }
-  if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('.endpoint-row[role="button"], .endpoint-category-head[role="button"]')) {
+  if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('.endpoint-row[role="button"], .endpoint-category-head[role="button"], .fn-endpoint-head[role="button"]')) {
     event.preventDefault();
     event.target.click();
   }
@@ -2342,6 +2813,7 @@ async function boot() {
   document.addEventListener('keydown', handleKeydown);
   window.addEventListener('popstate', () => {
     state.view = routeFromPath();
+    if (state.view === 'endpoints') state.endpointTab = initialEndpointTab();
     renderPage({ force: true });
     if (['home', 'bots', 'metrics'].includes(state.view)) loadAdminData({ quiet: true });
     if (state.view === 'tickets') loadTickets();
@@ -2360,7 +2832,8 @@ async function boot() {
     }
   });
 
-  await Promise.allSettled([loadHealth(), loadCatalog(), loadPlans({ quiet: true }), loadApiAccount(), loadAdminData({ quiet: true, force: true })]);
+  await Promise.allSettled([loadHealth(), loadCatalog(), loadFunctionalCatalog(), loadPlans({ quiet: true }), loadApiAccount().then(() => loadApiKeys()), loadAdminData({ quiet: true, force: true })]);
+  if (state.view === 'endpoints' && state.endpointTab === 'owner') loadOwnerOverview();
   state.loading = false;
   renderPage({ force: true });
   connectStream();
