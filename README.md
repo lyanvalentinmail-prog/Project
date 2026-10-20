@@ -161,7 +161,7 @@ En **Mis Bots → Editar** cada sub-bot tiene su propio editor de menú:
 - **Banner del menú** (pestaña *Estilo*): pega la URL de una imagen o súbela desde tu
   dispositivo (PNG, JPG o WebP, máx. 1 MB; el navegador la comprime solo). El menú se
   envía con esa imagen encima.
-- **Modo de entrega** (pestaña *Estilo*): elige **💬 Texto decorado** (los 7 estilos
+- **Modo de entrega** (pestaña *Estilo*): elige **💬 Texto decorado** (los 8 estilos —incluido **Tomioka** 🌊, el bot del agua, con su propio aviso de `.warn`—
   de siempre) o **📋 Lista interactiva**: el bot manda su info con un botón que abre el
   menú de lista nativo de WhatsApp para elegir la categoría (list message). Si el
   cliente no muestra listas, cae a texto automáticamente.

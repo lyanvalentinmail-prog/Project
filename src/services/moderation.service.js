@@ -73,6 +73,11 @@ export function warn(ctx, arg = null, reasonRaw = null) {
     reason: reason.value,
     adminJid: ctx.author.jid,
   });
+  // historial activo en orden cronológico (la plantilla Tomioka lo lista)
+  const history = warningsRepo
+    .list(ctx.group.groupId, prepared.jid)
+    .reverse()
+    .map((entry) => ({ reason: entry.reason || 'sin especificar', createdAt: entry.created_at }));
   auditRepo.log({
     instanceId: ctx.instance?.id ?? null,
     groupId: ctx.group.groupId,
@@ -126,6 +131,7 @@ export function warn(ctx, arg = null, reasonRaw = null) {
       adminName: ctx.author.name,
       count: total,
       max,
+      warnings: history,
       mentions: [prepared.jid],
       command: 'warn',
     },

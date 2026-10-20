@@ -8,7 +8,7 @@
  * devuelven texto plano listo para WhatsApp.
  */
 import { IDENTITY } from '../config/identity.js';
-import { SYM, RULE, KAOMOJI, kv, bullet, cmd, inlineCmd, footer, signature, frame, statusLine, bar, fancyNumber, section, versovaHeader, mention, miniHeader, currentPrefix } from './theme.js';
+import { SYM, RULE, KAOMOJI, kv, bullet, cmd, inlineCmd, footer, signature, frame, statusLine, bar, fancyNumber, section, versovaHeader, mention, miniHeader, currentPrefix, currentStyle } from './theme.js';
 import { formatDate, formatDateLong, formatDateTime, formatDuration, timeAgo } from '../utils/time.js';
 import { maskPhone } from '../utils/ids.js';
 
@@ -652,7 +652,42 @@ export function adminsList({ admins, count, groupName, botIsAdmin, ownerMention 
    ⑥ MODERACIÓN Y ADMINISTRACIÓN
    ═══════════════════════════════════════════════════════════════ */
 
-export function warnNotice({ userName, userMention, reason, adminName, count, max }) {
+const TOMIOKA_MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+function tomiokaFecha(ts) {
+  const date = new Date(Number(ts));
+  if (Number.isNaN(date.getTime())) return 'fecha desconocida';
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+  return `${date.getDate()} de ${TOMIOKA_MESES[date.getMonth()]} del ${date.getFullYear()}, ${hh}:${mm}`;
+}
+
+/** Aviso de advertencia con la marca Tomioka 🌊: lista el historial activo con la fecha de cada aviso. */
+function tomiokaWarnNotice({ userMention, reason, count, warnings }) {
+  const history = (Array.isArray(warnings) ? warnings : []).filter(Boolean);
+  const all = history.length ? history : [{ reason: reason ?? 'sin especificar', createdAt: Date.now() }];
+  const entries = all.slice(-10);
+  const offset = all.length - entries.length;
+  const lines = [
+    '︵ ₊˚๑ ꒰♯🌊⸝⸝@𝐓͠ᨵ꯭꯭ׁׅׅ𝐌𝐈𖣠꙰𝐊𝐀─𓉳 ꒱',
+    '',
+    '🌊ㅤ⁙ㅤ 𝕬𝐃𝐕𝐄𝐑𝐓𝐄𝐍𝐂𝐈𝐀 ㅤ׃',
+    '',
+    `✐ Se ha añadido una advertencia a ${userMention}.`,
+    '',
+    `❖ Advertencias totales \`(${count})\`:`,
+    '',
+  ];
+  entries.forEach((entry, index) => {
+    lines.push(`\`#${offset + index + 1}\` » ${entry.reason || 'sin especificar'}`);
+    lines.push(`> » Fecha: ${tomiokaFecha(entry.createdAt)}`);
+    lines.push('');
+  });
+  return lines.join('\n').trimEnd();
+}
+
+export function warnNotice({ userName, userMention, reason, adminName, count, max, warnings }) {
+  if (currentStyle() === 'tomioka') return tomiokaWarnNotice({ userMention, reason, count, warnings });
   const last = count >= max;
   return [
     `ㅤ${SYM.bracketL} ⚠ ${SYM.bracketR} ㅤ𝐴𝑑𝑣𝑒𝑟𝑡𝑒𝑛𝑐𝑖𝑎 ㅤ${count}/${max}`,
