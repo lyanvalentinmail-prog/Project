@@ -308,6 +308,7 @@ function renderHeaderInto(header) {
     </nav>
     <div class="header-actions">
       <span class="live-chip" id="live-chip" role="status" aria-live="polite"><span class="dot"></span><span>En vivo</span></span>
+      <button class="icon-button" type="button" data-action="open-palette" aria-label="Buscar y ejecutar (Ctrl+K)" title="Buscar (Ctrl+K)">${icon('search')}</button>
       <button class="icon-button notification-button" type="button" data-action="notifications" aria-label="Notificaciones">${icon('bell')}</button>
       <button class="profile-button" type="button" data-action="open-drawer" aria-label="Abrir menú de usuario">
         <span class="avatar">${escapeHtml(initials(state.apiUser?.username || 'Invitado'))}</span><span class="profile-name">${escapeHtml(state.apiUser?.username || 'Invitado')}</span>${icon('chevron')}
@@ -828,7 +829,12 @@ function renderMetrics() {
   const topCommands = (db?.topCommands || []);
   const maxCount = Math.max(1, ...topCommands.map((entry) => entry.count));
   const tableRows = Object.entries(db?.tables || {});
-  return `<div class="page-content"><div class="page-heading"><div><span class="section-kicker">${icon('chart')} Monitor del sistema</span><h1>Telemetría y Rendimiento</h1><p>Datos reales del servidor, la base de datos y tus sesiones de WhatsApp.</p></div><button class="btn btn-outline btn-small" type="button" data-action="refresh-data">${icon('link')} Actualizar</button></div>
+  state.metricsExport = [
+    ...serverCards.map((metric) => ({ section: 'Telemetría', label: metric.label, value: String(metric.value), note: String(metric.note ?? '').replace(/<[^>]*>/g, '') })),
+    ...topCommands.map((entry, index) => ({ section: 'Top comandos', label: `#${index + 1} ${entry.command}`, value: String(entry.count), note: 'ejecuciones' })),
+    ...tableRows.map(([table, count]) => ({ section: 'Base de datos', label: table, value: String(count), note: 'registros' })),
+  ];
+  return `<div class="page-content"><div class="page-heading"><div><span class="section-kicker">${icon('chart')} Monitor del sistema</span><h1>Telemetría y Rendimiento</h1><p>Datos reales del servidor, la base de datos y tus sesiones de WhatsApp.</p></div><div class="page-heading-actions"><button class="btn btn-outline btn-small" type="button" data-action="export-metrics">${icon('download')} Exportar CSV</button><button class="btn btn-outline btn-small" type="button" data-action="refresh-data">${icon('link')} Actualizar</button></div></div>
     <div class="metrics-grid metrics-grid-large">${serverCards.map((metric) => `<article class="card telemetry-card"><span class="metric-label">${icon(metric.icon)}${escapeHtml(metric.label)}</span>${metric.indicator ? '<i class="metric-indicator"></i>' : ''}<strong class="metric-value">${escapeHtml(metric.value)}</strong><span class="metric-note">${metric.note}</span>${metric.progress != null ? `<div class="progress-track"><div class="progress-value ${metric.green ? 'green-fill' : ''}" style="width:${metric.progress}%"></div></div>` : ''}</article>`).join('')}</div>
 
     <section class="section-block"><div class="section-heading"><div><span class="section-kicker">${icon('cpu')} Servidor</span><h2 class="section-title">Dónde corre tu bot</h2></div></div><div class="card service-list"><div class="service-row"><span class="service-info"><span class="green">●</span>${escapeHtml(server?.hostname || 'Servidor')}</span><span class="mono">${escapeHtml(server?.platform || '—')}</span><span class="service-meta"><span>${escapeHtml(server?.environment || server?.arch || '')}</span><span>Node ${escapeHtml(server?.node || '—')}</span></span></div><div class="service-row"><span class="service-info"><span class="green">●</span>Base de datos</span><span class="mono">${escapeHtml(db?.path || '—')}</span><span class="service-meta"><span>${db ? formatBytes(db.sizeBytes) : '—'}</span><span>${escapeHtml(databaseEngineLabel(db))}</span></span></div><div class="service-row"><span class="service-info"><span class="green">●</span>WhatsApp</span><span class="mono">${wa?.connected ?? 0}/${wa?.instances ?? 0} conectadas</span><span class="service-meta"><span>${wa?.groups ?? 0} grupos</span><span>Multi-Device</span></span></div></div></section>
@@ -2234,6 +2240,8 @@ function handleClick(event) {
   if (!actionTarget) return;
   const { action } = actionTarget.dataset;
   if (action === 'toggle-theme') toggleTheme();
+  else if (action === 'open-palette') openPalette();
+  else if (action === 'export-metrics') exportMetricsCsv();
   else if (action === 'open-drawer') openDrawer();
   else if (action === 'close-drawer') closeDrawer();
   else if (action === 'close-modal') closeModal();
@@ -2694,6 +2702,11 @@ function handleSubmit(event) {
 }
 
 function handleKeydown(event) {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault();
+    togglePalette();
+    return;
+  }
   if (event.key === 'Escape') {
     closeDrawer();
     closeModal();
@@ -2709,6 +2722,139 @@ function handleKeydown(event) {
     event.preventDefault();
     event.target.click();
   }
+}
+
+/* ── paleta de comandos (Ctrl/⌘+K) y exportar métricas ────────── */
+
+const paletteState = { items: [], active: 0 };
+const paletteNorm = (value) => String(value ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+function paletteItems() {
+  const views = [
+    { view: 'home', label: 'Inicio', hint: 'Panel principal', icon: 'home' },
+    { view: 'register', label: 'Registrar Bot', hint: 'Crear y vincular un bot', icon: 'plus' },
+    { view: 'bots', label: 'Mis Bots', hint: 'Gestionar sesiones', icon: 'bot' },
+    { view: 'metrics', label: 'Métricas', hint: 'Telemetría real', icon: 'chart' },
+    { view: 'store', label: 'Tienda', hint: 'Planes y productos', icon: 'crown' },
+    { view: 'endpoints', label: 'Endpoints', hint: 'Catálogo y API keys', icon: 'code' },
+    { view: 'favorites', label: 'Favoritos', hint: 'Accesos guardados', icon: 'star' },
+    { view: 'tickets', label: 'Soporte', hint: 'Abrir un ticket', icon: 'headset' },
+    { view: 'commands', label: 'Comandos', hint: 'Ayuda y referencia', icon: 'spark' },
+    { view: 'profile', label: 'Mi Perfil', hint: 'Datos y API key', icon: 'users' },
+  ].map((item) => ({ ...item, run: () => navigate(item.view) }));
+  const extras = [
+    { label: 'Exportar métricas en CSV', hint: 'Descargar la telemetría actual', icon: 'download', run: () => { navigate('metrics'); setTimeout(exportMetricsCsv, 400); } },
+    { label: 'Actualizar datos', hint: 'Recargar bots y métricas', icon: 'link', run: () => loadAdminData({ quiet: false }) },
+  ];
+  const bots = (state.instances || []).map((instance) => ({
+    label: instance.name || 'Bot sin nombre',
+    hint: instance.phoneMasked || 'Ver en Mis Bots',
+    icon: 'bot',
+    run: () => navigate('bots'),
+  }));
+  return [...views, ...extras, ...bots];
+}
+
+function paletteEl() {
+  let el = $('#palette-layer');
+  if (el) return el;
+  el = document.createElement('div');
+  el.id = 'palette-layer';
+  el.className = 'palette-layer';
+  el.hidden = true;
+  el.innerHTML = `<div class="palette-backdrop" data-palette-close></div>
+    <div class="palette-card" role="dialog" aria-modal="true" aria-label="Paleta de comandos">
+      <div class="palette-search">${icon('search')}<input id="palette-input" type="text" placeholder="Buscar vistas, acciones y bots…" autocomplete="off" /><kbd>esc</kbd></div>
+      <div class="palette-list" id="palette-list" role="listbox"></div>
+      <p class="palette-foot">↑↓ navegar · ↵ abrir · Ctrl+K alternar</p>
+    </div>`;
+  document.body.appendChild(el);
+  const input = el.querySelector('#palette-input');
+  input.addEventListener('input', () => renderPaletteList(input.value));
+  input.addEventListener('keydown', paletteKeys);
+  el.querySelector('[data-palette-close]').addEventListener('click', closePalette);
+  el.querySelector('#palette-list').addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-palette-index]');
+    if (btn) runPaletteItem(Number(btn.dataset.paletteIndex));
+  });
+  return el;
+}
+
+function renderPaletteList(query = '') {
+  const needle = paletteNorm(query);
+  paletteState.items = paletteItems().filter((item) => !needle || paletteNorm(`${item.label} ${item.hint}`).includes(needle));
+  paletteState.active = Math.min(paletteState.active, Math.max(0, paletteState.items.length - 1));
+  const list = $('#palette-list');
+  if (!list) return;
+  list.innerHTML = paletteState.items.length
+    ? paletteState.items.map((item, index) => `<button type="button" role="option" aria-selected="${index === paletteState.active}" class="palette-item ${index === paletteState.active ? 'is-active' : ''}" data-palette-index="${index}"><span class="palette-icon">${icon(item.icon)}</span><span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.hint)}</small></span></button>`).join('')
+    : '<div class="palette-empty">Sin resultados para tu búsqueda.</div>';
+  list.querySelector('.is-active')?.scrollIntoView({ block: 'nearest' });
+}
+
+function openPalette() {
+  const el = paletteEl();
+  el.hidden = false;
+  document.body.classList.add('modal-open');
+  const input = el.querySelector('#palette-input');
+  input.value = '';
+  paletteState.active = 0;
+  renderPaletteList('');
+  input.focus();
+}
+
+function closePalette() {
+  const el = $('#palette-layer');
+  if (!el || el.hidden) return;
+  el.hidden = true;
+  document.body.classList.remove('modal-open');
+}
+
+function togglePalette() {
+  const el = $('#palette-layer');
+  if (el && !el.hidden) closePalette(); else openPalette();
+}
+
+function runPaletteItem(index) {
+  const item = paletteState.items[index];
+  if (!item) return;
+  closePalette();
+  item.run();
+}
+
+function paletteKeys(event) {
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    event.stopPropagation();
+    const delta = event.key === 'ArrowDown' ? 1 : -1;
+    const total = paletteState.items.length;
+    if (total) paletteState.active = (paletteState.active + delta + total) % total;
+    renderPaletteList($('#palette-input')?.value || '');
+  } else if (event.key === 'Enter') {
+    event.preventDefault();
+    event.stopPropagation();
+    runPaletteItem(paletteState.active);
+  } else if (event.key === 'Escape') {
+    event.stopPropagation();
+    closePalette();
+  }
+}
+
+function exportMetricsCsv() {
+  const rows = state.metricsExport || [];
+  if (!rows.length) { showToast('Abre Métricas y espera a que carguen los datos.', 'info'); return; }
+  const cell = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  const csv = [['Sección', 'Métrica', 'Valor', 'Detalle'].join(','), ...rows.map((row) => [row.section, row.label, row.value, row.note].map(cell).join(','))].join('\n');
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `stellarwa-metricas-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  showToast('Métricas exportadas en CSV', 'success');
 }
 
 /** Estado en vivo vía SSE: solo datos reales del servidor. */
@@ -2802,6 +2948,9 @@ async function boot() {
   document.addEventListener('change', handleChange);
   document.addEventListener('submit', handleSubmit);
   document.addEventListener('keydown', handleKeydown);
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}); });
+  }
   window.addEventListener('popstate', () => {
     state.view = routeFromPath();
     if (state.view === 'endpoints') state.endpointTab = initialEndpointTab();

@@ -1250,3 +1250,30 @@ code { font-family: var(--mono); }
   .main-content { width: 100%; padding: 0; }
   .card, .wizard-card { box-shadow: none; break-inside: avoid; }
 }
+
+/* ── Paleta de comandos (Ctrl/⌘+K) ─────────────────────────────── */
+.palette-layer { position: fixed; inset: 0; z-index: 140; display: grid; justify-items: center; align-items: start; padding: 12vh 16px 16px; }
+.palette-layer[hidden] { display: none; }
+.palette-backdrop { position: absolute; inset: 0; background: rgba(20, 20, 20, .38); }
+.palette-card { position: relative; width: min(560px, 100%); background: var(--bg); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 24px 60px rgba(0, 0, 0, .18); overflow: hidden; animation: modal-in .18s ease both; }
+.palette-search { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border-soft); }
+.palette-search svg { flex: none; color: var(--text-muted); }
+.palette-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: 16px; }
+.palette-search kbd { padding: 2px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--text-muted); font: inherit; font-size: 11px; }
+.palette-list { max-height: min(46vh, 380px); overflow-y: auto; padding: 6px; }
+.palette-item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 8px 10px; border: 0; border-radius: 10px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.palette-icon { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); }
+.palette-item strong { display: block; font-size: 14px; line-height: 1.25; }
+.palette-item small { display: block; color: var(--text-muted); font-size: 12px; }
+.palette-item.is-active { background: var(--surface-2); }
+.palette-empty { padding: 20px; color: var(--text-muted); font-size: 14px; text-align: center; }
+.palette-foot { padding: 10px 16px; border-top: 1px solid var(--border-soft); color: var(--text-muted); font-size: 12px; }
+
+.page-heading-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+@media (max-width: 640px) {
+  .palette-layer { padding: 10px; }
+  .palette-list { max-height: 54vh; }
+  .page-heading-actions { width: 100%; }
+  .page-heading-actions .btn { flex: 1; }
+}

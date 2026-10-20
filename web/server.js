@@ -112,7 +112,15 @@ export async function createWebServer({ manager, port = env.webPort, host = env.
   });
 
   /* ── estáticos ──────────────────────────────────────────────── */
-  app.use(express.static(PUBLIC_DIR, { extensions: ['html'], index: 'index.html' }));
+  app.use(express.static(PUBLIC_DIR, {
+    extensions: ['html'],
+    index: 'index.html',
+    setHeaders(res, filePath) {
+      // PWA: MIME correcto del manifiesto y service worker siempre fresco
+      if (filePath.endsWith('.webmanifest')) res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+      if (filePath.endsWith('sw.js')) res.setHeader('Cache-Control', 'no-cache');
+    },
+  }));
   
   // SPA: todas las rutas que no sean /api devuelven index.html
   app.use((req, res, next) => {

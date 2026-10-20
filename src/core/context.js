@@ -378,6 +378,24 @@ export async function sendMessage(ctx, to, payload, options = {}) {
   const mentions = [...new Set([...(options.mentions ?? []), ...(payload?.data?.mentions ?? [])].map(normalizeJid).filter(Boolean))];
   const quoted = options.quoted === false ? null : options.quotedMessage ?? (to === 'reply' ? ctx.raw : null);
 
+  // 0 · encuesta nativa de WhatsApp (data.poll): se envía tal cual a Baileys
+  if (!Array.isArray(payload) && typeof payload !== 'string' && payload?.data?.poll) {
+    const poll = payload.data.poll;
+    const values = (poll.values ?? []).map((value) => String(value).slice(0, 100)).filter(Boolean).slice(0, 12);
+    if (values.length >= 2) {
+      try {
+        const sent = await ctx.client.sendMessage(
+          target,
+          { poll: { name: String(poll.name ?? 'Encuesta').slice(0, 255), values, selectableCount: poll.selectableCount ?? 1 } },
+          quoted ? { quoted } : {},
+        );
+        if (sent) return sent;
+      } catch (error) {
+        log.warn({ err: error }, 'encuesta nativa falló; se envía en texto');
+      }
+    }
+  }
+
   // 1 · entrega rica del menú (lista interactiva / banner del bot)
   if (!Array.isArray(payload) && typeof payload !== 'string') {
     const rich = await sendMenuRich(ctx, payload, text, target, quoted);

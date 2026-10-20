@@ -154,6 +154,11 @@ Caducan a los **60 segundos**. También piden confirmación: `.liberar`, `.termi
 | `.ship` `<@usuario> [@usuario2]` | todos | Calcula la compatibilidad entre dos personas. No modifica parejas.<br />Ejemplo: `.ship @persona1 @persona2`<br />Alias: `.shipeo` `.compatibilidad`<br />⚠ Con una sola mención, te shipea contigo. |
 | `.reglas` | todos | Muestra las reglas del team.<br />Ejemplo: `.reglas`<br />Alias: `.rules` `.normas` |
 | `.admins` | todos | Muestra los administradores del grupo.<br />Ejemplo: `.admins`<br />Alias: `.admines` `.staff` |
+| `.dado` `[caras\|NdF]` | todos | Tira uno o varios dados. Acepta .dado, .dado 20 o .dado 3d6.<br />Ejemplo: `.dado 3d6`<br />Alias: `.dados` `.dice` `.roll`<br />📩 También funciona por privado. |
+| `.moneda` | todos | Lanza una moneda al aire: cara o cruz.<br />Ejemplo: `.moneda`<br />Alias: `.coin` `.caraocruz` `.volado`<br />📩 También funciona por privado. |
+| `.8ball` `<pregunta>` | todos | La bola mágica responde tu pregunta de sí o no.<br />Ejemplo: `.8ball ¿hoy es mi día de suerte?`<br />Alias: `.bola8` `.bolamagica`<br />📩 También funciona por privado.<br />⚠ La misma pregunta recibe la misma respuesta durante el día. |
+| `.sorteo` `[@u1 @u2 …]` | todos | Sortea un ganador entre los registrados del grupo o entre los mencionados.<br />Ejemplo: `.sorteo`<br />Alias: `.sortear` `.rifa`<br />⚠ Con 2+ menciones, el sorteo es solo entre ellas. |
+| `.encuesta` `<pregunta \| op1 \| op2 …>` | todos | Crea una encuesta nativa de WhatsApp con voto único (2 a 12 opciones).<br />Ejemplo: `.encuesta ¿Rol esta noche? \| Sí \| No \| Tal vez`<br />Alias: `.poll` `.votacion` `.votar`<br />📩 También funciona por privado. |
 
 ## 𓆩 ⛓️ 𓆪 ⑥ ADMINISTRACIÓN (solo staff)
 
@@ -302,6 +307,8 @@ Caducan a los **60 segundos**. También piden confirmación: `.liberar`, `.termi
 | `.ver` | todos | Revela el mensaje de vista única que citaste (solo texto).<br />Ejemplo: `.ver (citando el mensaje)`<br />Alias: `.read` `.view` `.readviewonce` `.vv`<br />📩 También funciona por privado. |
 | `.toimg` | todos | Convierte el sticker citado en una imagen.<br />Ejemplo: `.toimg (citando un sticker)`<br />Alias: `.toimage` `.img` `.tophoto`<br />📩 También funciona por privado. |
 | `.tomp3` | todos | Convierte el video o nota de voz citada en audio MP3.<br />Ejemplo: `.tomp3 (citando un video)`<br />Alias: `.toaudio` `.mp3`<br />📩 También funciona por privado. |
+| `.elegir` `<opción1 \| opción2 \| …>` | todos | Elige una opción al azar entre las que separes con \|.<br />Ejemplo: `.elegir pizza \| sushi \| tacos`<br />Alias: `.elige` `.choose` `.decide`<br />📩 También funciona por privado. |
+| `.invertir` `<texto>` | todos | Devuelve tu texto escrito completamente al revés.<br />Ejemplo: `.invertir hola team`<br />Alias: `.reverse` `.alreves`<br />📩 También funciona por privado. |
 
 ## 𓆩 🍰 𓆪 ⑬ LOGOS
 

@@ -1193,4 +1193,96 @@ function formatTime2(ts) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   ⑨ AZAR & JUEGOS
+   ═══════════════════════════════════════════════════════════════ */
+
+const DICE_FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+
+export function dadoResult({ count, faces, rolls, total }) {
+  const list = Array.isArray(rolls) ? rolls : [];
+  const shown = faces === 6 ? list.map((roll) => DICE_FACES[roll - 1]).join(' ') : list.join(' · ');
+  return [
+    `${SYM.bracketL} 🎲 ${SYM.bracketR} ㅤ𝐷𝑎𝑑𝑜${count > 1 ? '𝑠' : ''} ㅤ·ㅤ ${count}d${faces}`,
+    RULE.night,
+    `ㅤ${shown}`,
+    count > 1 ? kv('Suma', `${total}`) : kv('Resultado', `${total}`),
+    RULE.night,
+    `ㅤ${KAOMOJI.smug}`,
+    `ㅤ${signature()}`,
+  ].join('\n');
+}
+
+export function monedaResult({ side }) {
+  return [
+    `${SYM.bracketL} 🪙 ${SYM.bracketR} ㅤ𝑀𝑜𝑛𝑒𝑑𝑎 ㅤ𝑎𝑙 ㅤ𝑎𝑖𝑟𝑒`,
+    RULE.wave,
+    `ㅤ${SYM.sun}ㅤSalió *${side}*.`,
+    RULE.wave,
+    `ㅤ${KAOMOJI.wink}`,
+    `ㅤ${signature()}`,
+  ].join('\n');
+}
+
+export function bola8Result({ question, answer }) {
+  return [
+    `${SYM.bracketL} 🎱 ${SYM.bracketR} ㅤ𝐵𝑜𝑙𝑎 ㅤ𝑚𝑎𝑔𝑖𝑐𝑎`,
+    RULE.night,
+    `ㅤ${SYM.moon}ㅤ«${question}»`,
+    '',
+    `ㅤ${SYM.star}ㅤ${answer}`,
+    RULE.night,
+    `ㅤ${signature()}`,
+  ].join('\n');
+}
+
+export function elegirResult({ options, chosen }) {
+  const list = Array.isArray(options) ? options : [];
+  return [
+    `${SYM.bracketL} 🍀 ${SYM.bracketR} ㅤ𝐸𝑙 ㅤ𝑎𝑧𝑎𝑟 ㅤ𝑑𝑒𝑐𝑖𝑑𝑒`,
+    RULE.sakura,
+    ...list.map((option) => bullet(option === chosen ? `*${option}*` : option, option === chosen ? SYM.star : SYM.leaf)),
+    '',
+    `ㅤ${SYM.arrow}ㅤMe quedo con *${chosen}*.`,
+    RULE.sakura,
+    `ㅤ${signature()}`,
+  ].join('\n');
+}
+
+export function sorteoResult({ winnerName, pool, mentions = [] }) {
+  const jids = Array.isArray(mentions) ? mentions : [];
+  return [
+    `${SYM.bracketL} 🎁 ${SYM.bracketR} ㅤ𝑆𝑜𝑟𝑡𝑒𝑜 ㅤ𝑑𝑒𝑙 ㅤ𝑡𝑒𝑎𝑚`,
+    RULE.coffee,
+    kv('Participantes', `${pool}`),
+    kv('Ganador/a', winnerName),
+    '',
+    `ㅤ${jids.length ? `${mention(jids[0])}ㅤ` : ''}¡Felicidades! ${KAOMOJI.hug}`,
+    `ㅤ${signature()}`,
+  ].join('\n');
+}
+
+export function encuestaText({ question, options }) {
+  const list = Array.isArray(options) ? options : [];
+  return [
+    `${SYM.bracketL} 🗳️ ${SYM.bracketR} ㅤ𝐸𝑛𝑐𝑢𝑒𝑠𝑡𝑎`,
+    RULE.thin,
+    `ㅤ*${question}*`,
+    ...list.map((option, index) => bullet(`${index + 1}. ${option}`)),
+    RULE.thin,
+    `ㅤVota en la encuesta de WhatsApp.`,
+    `ㅤ${signature()}`,
+  ].join('\n');
+}
+
+export function invertirResult({ reversed }) {
+  return [
+    `${SYM.bracketL} 🔁 ${SYM.bracketR} ㅤ𝑇𝑒𝑥𝑡𝑜 ㅤ𝑎𝑙 ㅤ𝑟𝑒𝑣𝑒𝑠`,
+    RULE.dotted,
+    `ㅤ${reversed}`,
+    RULE.dotted,
+    `ㅤ${signature()}`,
+  ].join('\n');
+}
+
 export { frame, section, fancyNumber, kv, bullet, cmd, inlineCmd, footer, signature, statusLine, mention, miniHeader };
