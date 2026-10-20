@@ -199,6 +199,11 @@ que la página se recargaba sola cada segundo). Además:
   tipografía y espaciados fluidos, navegación inferior táctil y modales en hoja
   inferior en móvil; componentes inspirados en **[uiverse.io](https://uiverse.io)**
   (MIT) adaptados a la paleta clara.
+- es una **PWA instalable** (manifiesto + service worker: abre al instante y
+  funciona sin red con la shell en caché; la API siempre va a red);
+- **paleta de comandos con `Ctrl/⌘+K`**: busca vistas, acciones y tus bots, y
+  salta a ellos con el teclado;
+- **exportación de métricas en CSV** desde la vista de telemetría.
 
 ### 𓆩 🔑 𓆪 API funcional, cuentas y API keys
 
@@ -278,7 +283,7 @@ src/
 │                         contexto, eventos de grupo, sincronización, mantenimiento
 ├── db/                   conexión WAL (better-sqlite3 o node:sqlite), esquema SQL y repositorios
 ├── services/             reglas de negocio (registro, roles, team, social, moderación)
-├── commands/             53 comandos organizados por categoría
+├── commands/             185 comandos organizados por categoría
 ├── security/             permisos, validación, rate-limit, confirmaciones
 ├── design/               tema, 71 plantillas y menú oficial
 └── utils/                ids, tiempo, texto, hash, plataforma (Termux), LID, instancia única

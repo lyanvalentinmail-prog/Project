@@ -22,6 +22,7 @@ import { perfilCommands } from './perfil.js';
 import { stickersCommands } from './stickers.js';
 import { toolsCommands } from './tools.js';
 import { logosCommands } from './logos.js';
+import { funCommands } from './fun.js';
 
 const MODULES = [
   ['info', infoCommands],
@@ -40,6 +41,7 @@ const MODULES = [
   ['stickers', stickersCommands],
   ['tools', toolsCommands],
   ['logos', logosCommands],
+  ['social', funCommands],
 ];
 
 const list = [];

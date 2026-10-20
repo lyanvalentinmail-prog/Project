@@ -61,6 +61,15 @@ export const VIEWS = {
   'social.rules': T.rules,
   'social.admins': T.adminsList,
 
+  // azar & juegos
+  'fun.dado': T.dadoResult,
+  'fun.moneda': T.monedaResult,
+  'fun.8ball': T.bola8Result,
+  'fun.elegir': T.elegirResult,
+  'fun.sorteo': T.sorteoResult,
+  'fun.encuesta': T.encuestaText,
+  'fun.invertir': T.invertirResult,
+
   // moderación
   'mod.warn': T.warnNotice,
   'mod.unwarn': T.unwarnNotice,
