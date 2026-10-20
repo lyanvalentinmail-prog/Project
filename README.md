@@ -195,9 +195,10 @@ que la página se recargaba sola cada segundo). Además:
 - el pairing code se muestra con cuenta atrás de 60 s, botón de copiar y renovación
   automática cuando caduca;
 - el sondeo de respaldo es lento y se detiene cuando la pestaña está oculta;
-- la interfaz usa componentes de **[uiverse.io](https://uiverse.io)** (MIT) adaptados a
-  la paleta del proyecto: botón con glow, loader átomo, switch hamburguesa y tarjetas
-  con icono degradado.
+- diseño **minimalista en blanco** y responsive: bordes finos, sombras suaves,
+  tipografía y espaciados fluidos, navegación inferior táctil y modales en hoja
+  inferior en móvil; componentes inspirados en **[uiverse.io](https://uiverse.io)**
+  (MIT) adaptados a la paleta clara.
 
 ### 𓆩 🔑 𓆪 API funcional, cuentas y API keys
 
