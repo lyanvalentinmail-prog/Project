@@ -849,13 +849,26 @@ code { font-family: var(--mono); }
 .profile-detail { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--border-soft); color: var(--text-secondary); font-size: 12.5px; }
 .profile-detail:last-child { border: 0; }
 .profile-detail strong { color: var(--text); font-size: 12.5px; text-align: right; overflow-wrap: anywhere; }
-.command-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 11px; }
+.command-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 11px; align-items: start; }
 .command-card { padding: 19px; }
 .command-card h2 { margin: 0; font-size: 15px; }
-.command-card[hidden], .command-pill[hidden] { display: none; }
+.command-card[hidden], .command-pill[hidden], .command-item[hidden] { display: none; }
 .command-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 15px; }
 .command-pill { min-height: 38px; padding: 0 12px; border: 1px solid var(--border); border-radius: 10px; color: var(--text); background: var(--surface-2); cursor: pointer; font-family: var(--mono); font-size: 11.5px; }
 .command-pill:hover { border-color: #111; background: #fff; }
+.commands-summary { margin: 0 0 14px; color: var(--text-secondary); font-size: 13.5px; }
+.commands-summary strong { color: var(--text); }
+.command-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.command-list { margin-top: 6px; }
+.command-item { padding: 11px 0; border-top: 1px solid var(--border-soft); }
+.command-item:first-child { border-top: 0; padding-top: 6px; }
+.command-item-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.command-item-head .command-pill { min-height: 34px; }
+.command-args { font-family: var(--mono); font-size: 11px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.command-badge { margin-left: auto; padding: 2px 8px; border: 1px solid var(--border); border-radius: 99px; background: var(--surface-2); color: var(--text-secondary); font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+.command-desc { margin: 6px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.45; }
+.command-aliases { margin: 5px 0 0; color: var(--text-muted); font-size: 11.5px; line-height: 1.5; overflow-wrap: anywhere; }
+.command-aliases code { font-family: var(--mono); font-size: 11px; }
 
 /* ── Drawer / modales / toasts ──────────────────────────────────── */
 .overlay-layer { position: fixed; z-index: 200; inset: 0; display: flex; align-items: center; justify-content: center; padding: 18px; }
