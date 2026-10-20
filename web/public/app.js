@@ -1269,16 +1269,85 @@ function renderProfile() {
 
 /* ── comandos ────────────────────────────────────────────────── */
 
-const commandExamples = [
-  { group: 'Activación', names: ['key'] },
-  { group: 'Información', names: ['menu', 'help', 'ping', 'botinfo', 'owner'] },
-  { group: 'Registro', names: ['reg', 'unreg', 'editar', 'ficha'] },
-  { group: 'Personajes', names: ['rol', 'cambiarol', 'roles', 'mirol', 'reservar'] },
-  { group: 'Gestión', names: ['team', 'miembros', 'afk', 'afks', 'inactivos'] },
-  { group: 'Administración', names: ['add', 'expulsar', 'ban', 'unban', 'warn', 'pendientes'] },
+/* ── comandos: catálogo completo en vivo desde /api/commands ────── */
+
+const COMMAND_CATEGORIES = [
+  ['info', 'Información'],
+  ['activation', 'Activación'],
+  ['registro', 'Registro'],
+  ['roles', 'Personajes y roles'],
+  ['team', 'Team'],
+  ['social', 'Interacción y azar'],
+  ['perfil', 'Perfil'],
+  ['economy', 'Economía'],
+  ['anime', 'Anime'],
+  ['stickers', 'Stickers'],
+  ['download', 'Descargas'],
+  ['tools', 'Herramientas'],
+  ['logos', 'Logos'],
+  ['admin', 'Administración'],
 ];
+const COMMAND_PERMISSIONS = { registered: 'Registrados', admin: 'Admins', owner: 'Owner' };
+
+let commandsCache = null;
+let commandsPrefix = '.';
+let commandsLoading = false;
+let commandsFailed = false;
+
+async function loadCommands() {
+  if (commandsCache || commandsLoading) return;
+  commandsLoading = true;
+  commandsFailed = false;
+  try {
+    const data = await request('/commands');
+    commandsPrefix = data.prefix || '.';
+    commandsCache = (data.commands || []).filter((command) => !command.hidden);
+  } catch {
+    commandsCache = null;
+    commandsFailed = true;
+  }
+  commandsLoading = false;
+  if (state.view === 'commands') renderPage({ force: true });
+}
+
+function groupedCommands() {
+  const byCategory = new Map();
+  for (const command of commandsCache || []) {
+    const key = command.category || 'otros';
+    if (!byCategory.has(key)) byCategory.set(key, []);
+    byCategory.get(key).push(command);
+  }
+  const known = new Set(COMMAND_CATEGORIES.map(([id]) => id));
+  const groups = COMMAND_CATEGORIES.filter(([id]) => byCategory.has(id));
+  for (const id of byCategory.keys()) {
+    if (!known.has(id)) groups.push([id, id.charAt(0).toUpperCase() + id.slice(1)]);
+  }
+  return groups.map(([id, label]) => ({
+    id,
+    label,
+    commands: [...byCategory.get(id)].sort((a, b) => a.name.localeCompare(b.name)),
+  }));
+}
+
 function renderCommands() {
-  return `<div class="page-content"><div class="page-heading"><div><span class="section-kicker">${icon('code')} Referencia</span><h1>Comandos</h1><p>Cada bot usa el prefijo que elegiste al crearlo: <code>#</code> <code>-</code> <code>+</code> <code>.</code> <code>/</code>. Puedes obtener el código de vinculación directamente desde el panel, sin comandos.</p></div><label class="search-box" style="max-width:360px;flex:1">${icon('search')}<input class="text-input" id="command-search" type="search" placeholder="Buscar comando…" autocomplete="off" /></label></div><div class="command-grid">${commandExamples.map((group) => `<section class="card command-card"><h2>${escapeHtml(group.group)}</h2><div class="command-pills">${group.names.map((name) => `<button class="command-pill" type="button" data-action="copy-command" data-command="${escapeHtml(name)}"><code>${escapeHtml(name)}</code></button>`).join('')}</div></section>`).join('')}</div>${pageFooter()}</div>`;
+  if (!commandsCache && !commandsFailed) loadCommands();
+  const heading = `<div class="page-heading"><div><span class="section-kicker">${icon('code')} Referencia</span><h1>Comandos</h1><p>Cada bot usa el prefijo que elegiste al crearlo: <code>#</code> <code>-</code> <code>+</code> <code>.</code> <code>/</code>. Toca cualquier comando para copiarlo con el prefijo por defecto.</p></div><label class="search-box" style="max-width:360px;flex:1">${icon('search')}<input class="text-input" id="command-search" type="search" placeholder="Buscar por nombre, alias o descripción…" autocomplete="off" /></label></div>`;
+
+  if (commandsFailed) {
+    return `<div class="page-content">${heading}<section class="card command-card"><h2>No se pudo cargar el catálogo</h2><p class="command-desc">Revisa tu conexión con el panel e inténtalo otra vez.</p><button class="btn btn-outline btn-small" type="button" data-action="reload-commands" style="margin-top:12px">${icon('link')} Reintentar</button></section>${pageFooter()}</div>`;
+  }
+  if (!commandsCache) {
+    return `<div class="page-content">${heading}<section class="card command-card"><p class="command-desc">Cargando todos los comandos del bot…</p></section>${pageFooter()}</div>`;
+  }
+
+  const groups = groupedCommands();
+  const total = commandsCache.length;
+  const summary = `<p class="commands-summary"><strong>${total}</strong> comandos en <strong>${groups.length}</strong> categorías <span id="command-visible" aria-live="polite"></span></p>`;
+  const cards = groups.map((group) => `<section class="card command-card"><div class="command-card-head"><h2>${escapeHtml(group.label)}</h2><span class="command-badge">${group.commands.length}</span></div><div class="command-list">${group.commands.map((command) => {
+    const badge = COMMAND_PERMISSIONS[command.permission];
+    return `<div class="command-item"><div class="command-item-head"><button class="command-pill" type="button" data-action="copy-command" data-command="${escapeHtml(commandsPrefix + command.name)}" title="Copiar comando"><code>${escapeHtml(commandsPrefix + command.name)}</code></button>${command.args ? `<span class="command-args">${escapeHtml(command.args)}</span>` : ''}${badge ? `<span class="command-badge">${badge}</span>` : ''}</div><p class="command-desc">${escapeHtml(command.description || '')}</p>${command.aliases?.length ? `<p class="command-aliases">Alias: ${command.aliases.map((alias) => `<code>${escapeHtml(commandsPrefix + alias)}</code>`).join(' ')}</p>` : ''}${command.example ? `<p class="command-aliases">Ejemplo: <code>${escapeHtml(command.example)}</code></p>` : ''}</div>`;
+  }).join('')}</div></section>`).join('');
+  return `<div class="page-content">${heading}${summary}<div class="command-grid">${cards}</div>${pageFooter()}</div>`;
 }
 
 /* ── router de páginas ───────────────────────────────────────── */
@@ -1365,6 +1434,7 @@ function navigate(view, { replace = false } = {}) {
   if (view === 'home' || view === 'bots' || view === 'metrics') loadAdminData({ quiet: true });
   if (view === 'store') loadPlans({ quiet: true });
   if (view === 'tickets') loadTickets();
+  if (view === 'commands') loadCommands();
   if (view === 'profile') loadSystem({ quiet: true });
   if (view === 'endpoints' && state.session) loadApiKeys();
 }
@@ -2416,6 +2486,7 @@ function handleClick(event) {
   else if (action === 'toggle-ticket-form') openTicketForm();
   else if (action === 'copy-api-key') copyText(state.apiUser?.apiKey || state.apiUser?.api_key || '', 'API key copiada');
   else if (action === 'copy-command') copyText(actionTarget.dataset.command || '', 'Comando copiado');
+  else if (action === 'reload-commands') { commandsCache = null; commandsFailed = false; renderPage({ force: true }); loadCommands(); }
   else if (action === 'switch-edit-tab') { state.editTab = actionTarget.dataset.tab; renderEditModal(); }
   else if (action === 'toggle-command') {
     const cmd = actionTarget.dataset.cmd;
@@ -2550,9 +2621,14 @@ function handleInput(event) {
     if (list) list.innerHTML = filtered.length ? filtered.map((ticket) => `<article class="ticket-row"><span class="drawer-item-icon">${icon('ticket')}</span><span><strong>${escapeHtml(ticket.title)}</strong><small class="muted">${escapeHtml(ticket.id)} · ${new Date(ticket.created_at).toLocaleDateString('es')}</small></span><span class="status-badge">${escapeHtml(ticket.status)}</span></article>`).join('') : '<div class="ticket-empty">No hay coincidencias con esa búsqueda.</div>';
   }
   if (target.id === 'command-search') {
-    const query = target.value.trim().toLowerCase();
-    $$('.command-pill').forEach((pill) => { pill.hidden = query && !pill.textContent.toLowerCase().includes(query); });
-    $$('.command-card').forEach((card) => { card.hidden = query && ![...card.querySelectorAll('.command-pill')].some((pill) => !pill.hidden); });
+    const query = paletteNorm(target.value.trim());
+    $$('.command-item').forEach((item) => { item.hidden = Boolean(query) && !paletteNorm(item.textContent).includes(query); });
+    $$('.command-card').forEach((card) => { card.hidden = Boolean(query) && ![...card.querySelectorAll('.command-item')].some((item) => !item.hidden); });
+    const counter = $('#command-visible');
+    if (counter) {
+      const visible = $$('.command-item:not([hidden])').length;
+      counter.textContent = query ? `· ${visible} resultado${visible === 1 ? '' : 's'}` : '';
+    }
   }
   if (target.id === 'edit-command-search') {
     state.editFilter = target.value;

@@ -11,7 +11,7 @@ import { normalizeJid, isGroupJid, maskPhone } from '../utils/ids.js';
 import { chunkText } from '../utils/text.js';
 import { ensureGroup, invalidateGroupCache } from './group-sync.js';
 import { isLidJid, isPnJid, adminsFromMetadata } from '../utils/lid.js';
-import { renderResult, setRenderPrefix } from '../design/index.js';
+import { renderResult, setRenderPrefix, setRenderStyle } from '../design/index.js';
 import { customRepo, normalizeBanner } from '../db/repositories/bot-customization.repo.js';
 import { fetchBuffer } from '../utils/net.js';
 import { scoped } from './logger.js';
@@ -371,6 +371,8 @@ async function sendMenuRich(ctx, payload, text, target, quoted) {
 export async function sendMessage(ctx, to, payload, options = {}) {
   // cada sub-bot puede tener su propio prefijo: se fija antes de renderizar
   setRenderPrefix(ctx?.instance?.prefix ?? ctx?.prefix);
+  // el estilo elegido en el panel también tiñe algunas plantillas (p. ej. el .warn de Tomioka)
+  try { setRenderStyle(ctx?.instance ? customRepo.get(ctx.instance.id)?.menuStyle : null); } catch { setRenderStyle(null); }
   const text = typeof payload === 'string' ? payload : renderResult(payload);
   if (!text) return null;
 

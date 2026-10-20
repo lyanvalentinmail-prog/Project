@@ -89,6 +89,20 @@ export function currentPrefix() {
   return renderPrefix;
 }
 
+/**
+ * Estilo visual del bot que está enviando (el elegido en el panel:
+ * versova, raiden, tomioka…). Algunas plantillas —p. ej. el aviso
+ * de `.warn` de Tomioka— cambian su formato según el estilo.
+ */
+let renderStyle = 'versova';
+export function setRenderStyle(style) {
+  renderStyle = style ? String(style) : 'versova';
+  return renderStyle;
+}
+export function currentStyle() {
+  return renderStyle;
+}
+
 /** Encabezado oficial del bot (el que definiste para VÉRSOVA). */
 export function versovaHeader({ subtitle = '( ᵕ ᴗ ᵕ )♡', symbol = SYM.purify } = {}) {
   return [

@@ -9,6 +9,8 @@ import * as T from './templates.js';
 import * as E from './extras.js';
 import { mainMenu, sectionHelp, commandHelp, availableSections, fullHelp } from './menu.js';
 import { error as errorTemplate } from './templates.js';
+import { TOMIOKA_VIEWS } from './tomioka.js';
+import { currentStyle } from './theme.js';
 
 /** Mapa vista → plantilla. Cada clave es lo que devuelven los servicios. */
 export const VIEWS = {
@@ -186,7 +188,10 @@ export function render(view, data = {}) {
   if (view === 'custom.response') {
     return data?.text ? String(data.text) : '';
   }
-  const template = VIEWS[view];
+  // Personalidad Tomioka: si el estilo de menú activo es "tomioka",
+  // todos los mensajes usan sus variantes de agua 🌊
+  const template =
+    (currentStyle() === 'tomioka' && TOMIOKA_VIEWS[view]) || VIEWS[view];
   if (typeof template !== 'function') {
     return errorTemplate({
       command: data.command ?? '?',

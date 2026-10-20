@@ -240,6 +240,81 @@ export function renderRaiden({ prefix, name, team, version, categories, userName
   return menu;
 }
 
+/* ── Tomioka 🌊 · el bot del agua ─────────────────────────────── */
+
+const TOMIOKA_BRAND = '@𝐓͠ᨵ꯭꯭ׁׅׅ𝐌𝐈𖣠꙰𝐊𝐀';
+const TOMIOKA_ICONS = ['🫧', '🌀', '💧'];
+const TOMIOKA_CLOSE = [['💧', '🌊'], ['🌊', '💧'], ['🌀', '🌊']];
+const TOMIOKA_KAOMOJI = ['( ᴗ͈ˬᴗ͈)', '(˶˃ ᵕ ˂˶)', '( ᵕ ᴗ ᵕ )'];
+const TOMIOKA_DIGITS = ['𝟎', '𝟏', '𝟐', '𝟑', '𝟒', '𝟓', '𝟔', '𝟕', '𝟖', '𝟗'];
+const tomiokaFancy = (value) => String(value ?? '').replace(/[0-9]/g, (d) => TOMIOKA_DIGITS[Number(d)]);
+const tomiokaNumber = (n) => tomiokaFancy(String(n).padStart(2, '0'));
+
+function tomiokaHeader(_name, _team, prefix, status, version) {
+  return `ㅤ➢ㅤ︵ ₊˚๑ ꒰♯🌊⸝⸝${TOMIOKA_BRAND}─𓉳 ꒱
+
+ㅤ⌞ㅤ≪⁹⁹ㅤ⁙ㅤ${TOMIOKA_BRAND}ㅤ◌
+
+ㅤㅤㅤㅤ𓆩 💧 𓆪
+ㅤㅤㅤ𝓜𝓮𝓷𝓾 𝓭𝓮 𝓬𝓸𝓶𝓪𝓷𝓭𝓸𝓼
+ㅤㅤㅤㅤ( ᵕ ᴗ ᵕ )♡
+
+ㅤㅤ࿙ׄ࿙ֹ࿚᮫᜔۬፟֟࿙ׄ࿚
+
+🌊ㅤ׃ㅤ 𝕴𝐍𝐅𝐎𝐑𝐌𝐀𝐂𝐈𝐎𝐍 ㅤ׃
+ㅤㅤ𓂃 𝖻𝗈𝗍 𝗂𝗇𝖿𝗈𝗋𝗆𝖺𝗍𝗂𝗈𝗇 𓂃
+
+ㅤ𖦹ㅤ𝖭𝖺𝗆𝖾ㅤ⁙    ${TOMIOKA_BRAND}
+ㅤ𖦹ㅤ𝖳𝖾𝖺𝗆ㅤ⁙    ◢🌊◣ 𝕿𝖔𝖒𝖎𝖐𝖆 ࿙💧࿚
+ㅤ𖦹ㅤ𝖯𝗋𝖾𝖿𝗂𝗑ㅤ⁙ㅤ${prefix}
+ㅤ𖦹ㅤ𝖲𝗍𝖺𝗍𝗎𝗌ㅤ⁙ㅤ${status}
+ㅤ𖦹ㅤ𝖵𝖾𝗋𝗌𝗂𝗈𝗇ㅤ⁙ㅤ${tomiokaFancy(version)}
+
+ㅤㅤㅤ(˶ᵔ ᵕ ᵔ˶) .ᐟ
+ㅤㅤ࿚ׄ࿙ֹ࿚᮫᜔۬፟֟࿙ֹ࿚ׄ࿙`;
+}
+
+function tomiokaFooter() {
+  return `ㅤㅤ࿚ׄ࿙ֹ࿚᮫᜔۬፟֟࿙ֹ࿚ׄ࿙
+
+ㅤㅤㅤ𓆩ㅤ🌊ㅤ𓆪
+ㅤㅤ 𝕰𝐍𝐃 𝐎𝐅 𝐌𝐄𝐍𝐔
+ㅤㅤㅤ( ᴗ͈ˬᴗ͈) ♡
+
+ㅤㅤ( Que la calma del agua guíe cada uno de tus pasos. )
+       ( Fluye sin prisa: todo río tranquilo llega al mar. )
+
+ㅤ⌞ㅤ≪⁹⁹ㅤ⁙ㅤ${TOMIOKA_BRAND}
+ㅤㅤㅤ𝖾𝗌𝗍.ㅤ𝟐𝟎𝟐𝟔
+
+ㅤㅤ࿚ׄ࿚ㅤ𓆩 🌊 𓆪ㅤ࿙ׄ࿚`;
+}
+
+export function renderTomioka({ status, prefix, name, team, version, categories }) {
+  const header = tomiokaHeader(name, team, prefix, status, version);
+  const blocks = categories.map((cat, idx) => {
+    const meta = cat.meta;
+    const icon = TOMIOKA_ICONS[idx % TOMIOKA_ICONS.length];
+    const [closeA, closeB] = TOMIOKA_CLOSE[idx % TOMIOKA_CLOSE.length];
+    const kaomoji = TOMIOKA_KAOMOJI[idx % TOMIOKA_KAOMOJI.length];
+    const cmds = cat.commands.map((c) => {
+      const arg = c.args ? ` ${c.args}` : '';
+      return `୨ৎㅤ${prefix}${c.name}${arg}`;
+    }).join('\n');
+    return `ㅤㅤㅤ◢ ${tomiokaNumber(idx + 1)} ◣
+${icon}ㅤ׃ㅤ ${meta.title} ㅤ׃
+ㅤㅤ𓂃 ${meta.sub} 𓂃
+ㅤㅤㅤ${meta.kaomoji}
+
+${cmds}
+
+ㅤㅤ࿙${closeA}࿚ㅤ𓆩 ${closeB} 𓆪
+ㅤㅤㅤ${kaomoji}ㅤ⁙
+ㅤㅤ࿚ׄ࿙ֹ࿚᮫᜔۬፟֟࿙ֹ࿚ׄ࿙`;
+  }).join('\n\n');
+  return `${header}\n\n${blocks}\n\n${tomiokaFooter()}`;
+}
+
 export const STYLES = {
   versova: { id: 'versova', label: 'Versova (Oficial)', description: 'El diseño clásico de VÉRSOVA, con kaomojis y bloques decorados.', render: renderVersova, preview: 'Elaborado · con encabezado, 5 bloques y footer' },
   minimal: { id: 'minimal', label: 'Minimal', description: 'Limpio y directo: lista plana con viñetas.', render: renderMinimal, preview: 'Limpio · lista por categorías' },
@@ -248,6 +323,7 @@ export const STYLES = {
   compact: { id: 'compact', label: 'Compact', description: 'Una línea por categoría: máximo ahorro.', render: renderCompact, preview: 'Ultra corto · una línea' },
   retro: { id: 'retro', label: 'Retro', description: 'ASCII box art nostálgico, tipo BBS 90s.', render: renderRetro, preview: 'ASCII art · retro box' },
   raiden: { id: 'raiden', label: 'Raiden', description: 'El menú de Raiden-WaBot: saludo, bloques por categoría y Made with love.', render: renderRaiden, preview: 'Saludo · ☕︎ bloques · ﹙❀﹚' },
+  tomioka: { id: 'tomioka', label: 'Tomioka', description: 'El bot del agua 🌊: menú acuático con burbujas y remolinos, marca propia y aviso de .warn a su estilo.', render: renderTomioka, preview: 'Acuático · 🌊 bloques 𝟎𝟏 · 💧' },
 };
 
 export function renderByStyle(styleId, data) {

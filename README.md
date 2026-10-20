@@ -161,7 +161,7 @@ En **Mis Bots → Editar** cada sub-bot tiene su propio editor de menú:
 - **Banner del menú** (pestaña *Estilo*): pega la URL de una imagen o súbela desde tu
   dispositivo (PNG, JPG o WebP, máx. 1 MB; el navegador la comprime solo). El menú se
   envía con esa imagen encima.
-- **Modo de entrega** (pestaña *Estilo*): elige **💬 Texto decorado** (los 7 estilos
+- **Modo de entrega** (pestaña *Estilo*): elige **💬 Texto decorado** (los 8 estilos —incluido **Tomioka** 🌊, el bot del agua, que adapta *todos* los mensajes a su formato acuático (bienvenida, fichas, economía, descargas, etc.), además de su propio aviso de `.warn`—
   de siempre) o **📋 Lista interactiva**: el bot manda su info con un botón que abre el
   menú de lista nativo de WhatsApp para elegir la categoría (list message). Si el
   cliente no muestra listas, cae a texto automáticamente.
@@ -211,7 +211,7 @@ En la página **Endpoints** del panel hay pestañas:
 
 | Pestaña | Qué hace |
 |---|---|
-| **Funcionales** | 38 endpoints propios que responden de verdad (nada simulado), con buscador y un probador en vivo (rellena parámetros → *Probar* → ves el JSON o la imagen). |
+| **Funcionales** | 52 endpoints propios que responden de verdad (nada simulado): 38 locales + 14 en línea (descargas, IA, traducción, búsquedas de YouTube/Spotify/letras/anime/Wikipedia, clima y acortador de enlaces), con buscador y un probador en vivo (rellena parámetros → *Probar* → ves el JSON o la imagen). |
 | **Mis API Keys** | Iniciar sesión / registrarse, crear keys (**máximo 100 días**), renovarlas, revocarlas y ver el uso reciente. |
 | **Catálogo** | El catálogo externo de antes. |
 | **Owner** | Solo para `lyanvalentinmail@gmail.com`: usuarios, keys activas, peticiones y endpoints más usados; puede revocar keys o eliminar cuentas. |
@@ -349,7 +349,7 @@ cierre de grupo, aislamiento entre grupos, enmascarado de números en todas las 
 rate-limit, expiración de confirmaciones, robustez ante errores de envío, las 71 plantillas
 de diseño la API web completa (auth, sub-bots, grupos, solicitudes, SSE, estáticos), las cuentas
 web y API keys (tope de 100 días, caducidad, revocación, límite por minuto, owner), los
-38 endpoints funcionales y el menú en lista interactiva (envío con nodo `<biz>` y
+52 endpoints funcionales y el menú en lista interactiva (envío con nodo `<biz>` y
 lectura de la fila elegida).
 También se prueba el adaptador `messages.upsert`: comandos propios y de terceros,
 chats privados, mensajes offline recientes, deduplicación, ecos del bot, mensajes

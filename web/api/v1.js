@@ -1,8 +1,11 @@
 /**
  * 𓆩 ☕ 𓆪  VÉRSOVA · API funcional (/api/v1)
  * ────────────────────────────────────────────────────────────────
- * Endpoints REALES que se ejecutan en este mismo servidor (sin APIs
- * externas ni internet). Todos exigen una API key válida y vigente
+ * Endpoints REALES que se ejecutan en este mismo servidor. La mayoría
+ * son locales (sin internet); el bloque «en línea» (Descargas,
+ * Búsquedas, IA y Web, marcados con `online: true`) usa servicios
+ * públicos y responde 502 si el servidor no tiene conexión o el
+ * servicio externo falla. Todos exigen una API key válida y vigente
  * (`?key=vsk_…` o cabecera `X-API-Key`), que se crea desde la pestaña
  * «Funcionales» de la página de endpoints tras iniciar sesión.
  *
@@ -17,6 +20,7 @@ import { renderLogoPng, LOGO_EFFECT_IDS } from '../../src/services/logo-renderer
 import { registry } from '../../src/commands/index.js';
 import { IDENTITY } from '../../src/config/identity.js';
 import { findKeyByPlaintext, findUserById, keyStatus, roleOf } from './accounts.js';
+import * as online from '../../src/services/online.service.js';
 
 export const RATE_LIMIT_PER_MINUTE = 60;
 
@@ -364,8 +368,24 @@ const EIGHT_BALL = [
 
 const P = (name, { required = false, example = '', description = '', options = null } = {}) => ({ name, required, example, description, options });
 
+const bad502 = (message) => new ApiError(message, 502);
+
+function httpUrl(q, name = 'url') {
+  const value = text(q, name, { max: 600 });
+  if (!/^https?:\/\//i.test(value)) throw bad(`«${name}» debe ser una URL http(s) completa.`);
+  return value;
+}
+
+function langCode(q, name, fallback) {
+  const value = String(q[name] ?? fallback ?? '').trim().toLowerCase();
+  if (value !== 'autodetect' && !/^[a-z]{2,3}(-[a-z]{2})?$/.test(value)) {
+    throw bad(`«${name}» debe ser un código de idioma (es, en, pt, fr…).`);
+  }
+  return value;
+}
+
 /**
- * @type {Array<{ path, name, category, icon, description, params, response?, handler }>}
+ * @type {Array<{ path, name, category, icon, description, params, response?, online?, handler }>}
  * `handler(query, req, deps)` devuelve un objeto JSON o `{ __binary: { type, body } }`.
  */
 export const FUNCTIONAL_ENDPOINTS = [
@@ -878,6 +898,173 @@ export const FUNCTIONAL_ENDPOINTS = [
       return { categories: registry.categories(), total: list.length, commands: list };
     },
   },
+  /* ── Descargas (en línea · cobalt / tikwm) ──────────────── */
+  {
+    path: '/download/media', name: 'Descargar de redes sociales', category: 'Descargas', icon: '⬇️', online: true,
+    description: 'Resuelve el enlace directo de descarga de YouTube, TikTok, Instagram, Facebook, X y más (vía cobalt).',
+    params: [P('url', { required: true, example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', description: 'Enlace público del contenido' }), P('mode', { example: 'video', options: ['video', 'audio'], description: 'video (720p) o solo audio MP3' })],
+    handler: async (q) => {
+      const url = httpUrl(q);
+      const mode = pick(q, 'mode', ['video', 'audio'], 'video');
+      const resolved = await online.cobaltResolve(url, { audio: mode === 'audio' });
+      if (!resolved) throw bad502('No se pudo resolver la descarga (cobalt no respondió o el enlace no es soportado).');
+      return { input: url, mode, download: resolved.url, filename: resolved.filename, picker: resolved.picker, source: resolved.source };
+    },
+  },
+  {
+    path: '/download/ytmp3', name: 'YouTube a MP3', category: 'Descargas', icon: '🎧', online: true,
+    description: 'Devuelve el enlace directo del audio MP3 de un video de YouTube.',
+    params: [P('url', { required: true, example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', description: 'Enlace del video de YouTube' })],
+    handler: async (q) => {
+      const url = httpUrl(q);
+      const resolved = await online.cobaltResolve(url, { audio: true });
+      if (!resolved) throw bad502('No se pudo resolver el MP3 (cobalt no respondió).');
+      return { input: url, format: 'mp3', download: resolved.url, filename: resolved.filename, source: resolved.source };
+    },
+  },
+  {
+    path: '/download/ytmp4', name: 'YouTube a MP4', category: 'Descargas', icon: '🎬', online: true,
+    description: 'Devuelve el enlace directo del video MP4 (720p) de YouTube.',
+    params: [P('url', { required: true, example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', description: 'Enlace del video de YouTube' })],
+    handler: async (q) => {
+      const url = httpUrl(q);
+      const resolved = await online.cobaltResolve(url, { audio: false });
+      if (!resolved) throw bad502('No se pudo resolver el MP4 (cobalt no respondió).');
+      return { input: url, format: 'mp4', quality: '720p', download: resolved.url, filename: resolved.filename, source: resolved.source };
+    },
+  },
+  {
+    path: '/download/tiktok', name: 'TikTok sin marca de agua', category: 'Descargas', icon: '📱', online: true,
+    description: 'Metadatos y enlaces del video (HD/SD sin marca de agua y audio) vía tikwm.',
+    params: [P('url', { required: true, example: 'https://www.tiktok.com/@tiktok/video/7106594312292453675', description: 'Enlace del TikTok' })],
+    handler: async (q) => {
+      const url = httpUrl(q);
+      const info = await online.tiktokResolve(url);
+      if (!info) throw bad502('No se pudo resolver el TikTok (tikwm no respondió).');
+      return { input: url, ...info };
+    },
+  },
+  {
+    path: '/download/instagram', name: 'Instagram (reels y fotos)', category: 'Descargas', icon: '📸', online: true,
+    description: 'Resuelve el enlace directo de reels, fotos y carruseles públicos de Instagram.',
+    params: [P('url', { required: true, example: 'https://www.instagram.com/reel/C8xyzABC123/', description: 'Enlace público de Instagram' })],
+    handler: async (q) => {
+      const url = httpUrl(q);
+      const resolved = await online.cobaltResolve(url, { audio: false });
+      if (!resolved) throw bad502('No se pudo resolver Instagram (cobalt no respondió o la cuenta es privada).');
+      return { input: url, download: resolved.url, filename: resolved.filename, picker: resolved.picker, source: resolved.source };
+    },
+  },
+
+  /* ── Búsquedas (en línea) ────────────────────────────────── */
+  {
+    path: '/search/youtube', name: 'Buscar en YouTube', category: 'Búsquedas', icon: '🔎', online: true,
+    description: 'Busca videos en YouTube: título, canal, duración, vistas, miniatura y enlace.',
+    params: [P('q', { required: true, example: 'lofi hip hop radio', description: 'Qué buscar' }), P('limit', { example: '3', description: 'Resultados (1 a 10)' })],
+    handler: async (q) => {
+      const query = text(q, 'q', { max: 200 });
+      const limit = int(q, 'limit', { min: 1, max: 10, fallback: 5 });
+      const results = await online.youtubeSearch(query, limit);
+      return { query, total: results.length, results, source: 'youtube' };
+    },
+  },
+  {
+    path: '/search/spotify', name: 'Buscar canciones', category: 'Búsquedas', icon: '🎧', online: true,
+    description: 'Busca canciones con preview de audio real de 30 s (catálogo Deezer, como el comando .spotify).',
+    params: [P('q', { required: true, example: 'shakira bzrp 53', description: 'Canción o artista' }), P('limit', { example: '3', description: 'Resultados (1 a 10)' })],
+    handler: async (q) => {
+      const query = text(q, 'q', { max: 200 });
+      const limit = int(q, 'limit', { min: 1, max: 10, fallback: 5 });
+      const results = await online.deezerSearch(query, limit);
+      return { query, total: results.length, results, source: 'deezer' };
+    },
+  },
+  {
+    path: '/search/lyrics', name: 'Letra de una canción', category: 'Búsquedas', icon: '🎤', online: true,
+    description: 'Encuentra la letra completa buscando «artista - título» o texto libre (lyrics.ovh).',
+    params: [P('q', { required: true, example: 'bad bunny - ojitos lindos', description: 'Artista y título' })],
+    handler: async (q) => {
+      const query = text(q, 'q', { max: 200 });
+      const found = await online.lyricsSearch(query);
+      if (!found) return { query, found: false, source: 'lyrics.ovh' };
+      return { query, found: true, ...found, source: 'lyrics.ovh' };
+    },
+  },
+  {
+    path: '/search/anime', name: 'Buscar anime', category: 'Búsquedas', icon: '🌸', online: true,
+    description: 'Busca en MyAnimeList vía Jikan: nota, episodios, año, estado, sinopsis e imagen.',
+    params: [P('q', { required: true, example: 'kimetsu no yaiba', description: 'Nombre del anime' }), P('limit', { example: '3', description: 'Resultados (1 a 10)' })],
+    handler: async (q) => {
+      const query = text(q, 'q', { max: 200 });
+      const limit = int(q, 'limit', { min: 1, max: 10, fallback: 5 });
+      const results = await online.animeSearch(query, limit);
+      return { query, total: results.length, results, source: 'jikan' };
+    },
+  },
+  {
+    path: '/search/wikipedia', name: 'Resumen de Wikipedia', category: 'Búsquedas', icon: '📚', online: true,
+    description: 'Devuelve el resumen del artículo de Wikipedia más relevante, con miniatura y enlace.',
+    params: [P('q', { required: true, example: 'Montevideo', description: 'Tema a consultar' }), P('lang', { example: 'es', description: 'Idioma de Wikipedia (es, en, pt…)' })],
+    handler: async (q) => {
+      const query = text(q, 'q', { max: 200 });
+      const lang = langCode(q, 'lang', 'es');
+      const found = await online.wikipediaSummary(query, lang);
+      if (!found) return { query, lang, found: false, source: 'wikipedia' };
+      return { query, found: true, ...found, source: 'wikipedia' };
+    },
+  },
+  {
+    path: '/search/weather', name: 'Clima actual', category: 'Búsquedas', icon: '🌤️', online: true,
+    description: 'Clima actual de una ciudad: temperatura, sensación, humedad, viento y condición (Open-Meteo).',
+    params: [P('city', { required: true, example: 'Montevideo', description: 'Ciudad (y país si hace falta)' })],
+    handler: async (q) => {
+      const city = text(q, 'city', { max: 120 });
+      const found = await online.weatherNow(city);
+      if (!found) throw bad502('No se encontró la ciudad o el servicio de clima no respondió.');
+      return { query: city, ...found, source: 'open-meteo' };
+    },
+  },
+
+  /* ── IA (en línea) ───────────────────────────────────────── */
+  {
+    path: '/ai/chat', name: 'Chat con IA', category: 'IA', icon: '🤖', online: true,
+    description: 'Pregunta lo que sea a la IA en línea (la misma del comando .ia), con instrucción de sistema opcional.',
+    params: [P('prompt', { required: true, example: '¿Qué es un agujero negro? Explícalo en una frase.', description: 'Tu pregunta o mensaje' }), P('system', { example: '', description: 'Instrucción de sistema (opcional)' })],
+    handler: async (q) => {
+      const prompt = text(q, 'prompt', { max: 1500 });
+      const system = text(q, 'system', { max: 400, required: false }).trim() || null;
+      const answer = await online.aiChat(prompt, { system });
+      if (!answer) throw bad502('La IA en línea no respondió ahora mismo.');
+      return { prompt, ...answer };
+    },
+  },
+  {
+    path: '/ai/translate', name: 'Traducir texto', category: 'IA', icon: '🌍', online: true,
+    description: 'Traduce texto entre idiomas con detección automática del origen (MyMemory).',
+    params: [P('text', { required: true, example: 'buenos días, equipo', description: 'Texto a traducir' }), P('to', { example: 'en', description: 'Idioma destino (en, pt, fr…)' }), P('from', { example: '', description: 'Idioma origen (vacío = detectar)' })],
+    handler: async (q) => {
+      const value = text(q, 'text', { max: 1000 });
+      const to = langCode(q, 'to', 'en');
+      const from = langCode(q, 'from', 'autodetect');
+      if (to === 'autodetect') throw bad('«to» debe ser un idioma concreto (en, pt, fr…).');
+      const out = await online.translateText(value, { from, to });
+      if (!out) throw bad502('El traductor no respondió ahora mismo.');
+      return { input: value, ...out };
+    },
+  },
+
+  /* ── Web (en línea) ──────────────────────────────────────── */
+  {
+    path: '/web/shorten', name: 'Acortar enlace', category: 'Web', icon: '🔗', online: true,
+    description: 'Acorta una URL larga con is.gd y devuelve el enlace corto.',
+    params: [P('url', { required: true, example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', description: 'URL larga a acortar' })],
+    handler: async (q) => {
+      const url = httpUrl(q);
+      const out = await online.shortenUrl(url);
+      if (!out) throw bad502('El acortador no respondió ahora mismo.');
+      return { input: url, ...out };
+    },
+  },
 ];
 
 /** Metadatos públicos (sin handlers) para el panel. */
@@ -892,6 +1079,7 @@ export function functionalCatalog() {
       icon: ep.icon,
       description: ep.description,
       response: ep.response ?? 'json',
+      online: Boolean(ep.online),
       params: ep.params,
     });
   }

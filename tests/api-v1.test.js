@@ -184,9 +184,14 @@ test('todos los endpoints responden con sus ejemplos', async () => {
   for (const ep of FUNCTIONAL_ENDPOINTS) {
     const qs = new URLSearchParams(ep.params.filter((p) => p.example !== '').map((p) => [p.name, p.example])).toString();
     const res = await call(`/api/v1${ep.path}${qs ? `?${qs}` : ''}`, { key });
-    assert.equal(res.status, 200, `${ep.path}: ${JSON.stringify(res.data).slice(0, 200)}`);
-    if (ep.response === 'image') assert.match(res.type, /^image\//, ep.path);
-    else assert.equal(res.data.ok, true, ep.path);
+    // los endpoints «en línea» dependen de servicios externos: sin red deben
+    // degradar con un 502 limpio, nunca con un 500 ni un cuelgue
+    if (ep.online) assert.ok([200, 502].includes(res.status), `${ep.path}: ${res.status}`);
+    else assert.equal(res.status, 200, `${ep.path}: ${JSON.stringify(res.data).slice(0, 200)}`);
+    if (res.status === 200) {
+      if (ep.response === 'image') assert.match(res.type, /^image\//, ep.path);
+      else assert.equal(res.data.ok, true, ep.path);
+    }
   }
 });
 
