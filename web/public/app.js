@@ -15,13 +15,8 @@ const safeRead = (key, fallback = null) => {
   } catch { return fallback; }
 };
 const safeWrite = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} };
-/** Tema guardado ('light' | 'dark') o null. Nunca lanza (modo privado, iframes sin almacenamiento). */
-const storedTheme = () => {
-  try {
-    const value = localStorage.getItem('stellar_theme');
-    return value === 'light' || value === 'dark' ? value : null;
-  } catch { return null; }
-};
+/** La interfaz tiene un único tema: blanco minimalista. */
+const storedTheme = () => 'light';
 const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const formatNumber = (value) => new Intl.NumberFormat('es-ES').format(number(value));
 const formatBytes = (value) => {
@@ -113,7 +108,7 @@ const state = {
   authMode: 'api-login',
   pendingPlan: '',
   newTicketOpen: false,
-  theme: storedTheme() || 'dark',
+  theme: 'light',
   connectTarget: null,
   editTarget: null,
   editTab: 'general',
@@ -225,9 +220,11 @@ function afterRender({ touched = false } = {}) {
 }
 
 function applyThemeClass() {
-  document.body.classList.toggle('light-theme', state.theme === 'light');
+  // Diseño único: blanco minimalista en todos los dispositivos.
+  state.theme = 'light';
+  document.body.classList.add('light-theme');
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', state.theme === 'light' ? '#f7f5fb' : '#050506');
+  if (meta) meta.setAttribute('content', '#ffffff');
 }
 
 function updateLiveChip() {
@@ -293,7 +290,6 @@ function renderHeaderInto(header) {
       </nav>
       <div class="header-actions">
         <span class="live-chip" id="live-chip" role="status" aria-live="polite"><span class="dot"></span><span>En vivo</span></span>
-        <button class="icon-button" type="button" data-action="toggle-theme" aria-label="Cambiar tema">${icon(state.theme === 'light' ? 'sun' : 'moon')}</button>
         <a class="btn btn-primary btn-small header-panel-link" href="/home" data-page="home">Ir al Panel ${icon('arrow-right')}</a>
         <label class="uhamburger mobile-menu-toggle" title="Abrir navegación">
           <input type="checkbox" id="landing-menu-check" data-action="toggle-landing-menu" aria-label="Abrir navegación" />
@@ -312,7 +308,6 @@ function renderHeaderInto(header) {
     </nav>
     <div class="header-actions">
       <span class="live-chip" id="live-chip" role="status" aria-live="polite"><span class="dot"></span><span>En vivo</span></span>
-      <button class="icon-button" type="button" data-action="toggle-theme" aria-label="Cambiar tema">${icon(state.theme === 'light' ? 'sun' : 'moon')}</button>
       <button class="icon-button notification-button" type="button" data-action="notifications" aria-label="Notificaciones">${icon('bell')}</button>
       <button class="profile-button" type="button" data-action="open-drawer" aria-label="Abrir menú de usuario">
         <span class="avatar">${escapeHtml(initials(state.apiUser?.username || 'Invitado'))}</span><span class="profile-name">${escapeHtml(state.apiUser?.username || 'Invitado')}</span>${icon('chevron')}
@@ -849,7 +844,7 @@ function renderMetrics() {
 function renderStore() {
   const plans = state.apiPlans || [];
   const cards = plans.map((plan, index) => {
-    const palette = ['#9b5cf6', '#a05cf3', '#f0b62b', '#e4548b'][index % 4];
+    const palette = '#111111'; // acento único en el diseño blanco
     const features = Array.isArray(plan.features) ? plan.features : [];
     return `<article class="card plan-card ${plan.popular ? 'is-popular' : ''}" style="--plan-color:${palette}">${plan.popular ? '<span class="plan-ribbon">MÁS POPULAR</span>' : ''}<div class="plan-head"><span class="plan-icon">${icon(index === 0 ? 'bolt' : index === 1 ? 'gem' : index === 2 ? 'crown' : 'briefcase')}</span><span><span class="plan-name"><h2>${escapeHtml(plan.name)}</h2><span class="plan-tier">${escapeHtml(plan.name)}</span></span></span></div><p class="plan-description">${escapeHtml(features[0] || 'Más potencia y flexibilidad para tus proyectos.')}</p><ul class="plan-features"><li><span class="plan-feature-icon">${icon('bolt')}</span><span><strong>${formatNumber(plan.credits)}</strong> créditos</span></li>${features.slice(1, 4).map((feature, featureIndex) => `<li><span class="plan-feature-icon">${icon(['lock', 'clock', 'server'][featureIndex])}</span><span>${escapeHtml(feature)}</span></li>`).join('')}</ul><div class="plan-price"><span>${plan.price === 0 ? 'Gratis' : `$${Number(plan.price).toFixed(2)}`}</span>${plan.price > 0 ? '<small>USD</small>' : ''}</div><button class="btn btn-primary btn-full" type="button" data-action="purchase-plan" data-plan="${escapeHtml(plan.id || plan.name.toLowerCase())}">Contratar</button></article>`;
   }).join('');
@@ -1670,7 +1665,7 @@ async function openEditInstance(instance) {
     renderEditModal();
     // preview se carga bajo demanda al abrir pestaña Estilo
   } catch (e) {
-    content.innerHTML = `<button class="icon-button modal-close" type="button" data-action="close-modal" aria-label="Cerrar">${icon('close')}</button><p style="color:#ff8f96;">No se pudo cargar el editor: ${escapeHtml(e.message)}</p>`;
+    content.innerHTML = `<button class="icon-button modal-close" type="button" data-action="close-modal" aria-label="Cerrar">${icon('close')}</button><p style="color:var(--red);">No se pudo cargar el editor: ${escapeHtml(e.message)}</p>`;
   }
 }
 
@@ -1701,7 +1696,7 @@ function renderEditModal() {
         </form>
       </div>
       <div class="edit-card" style="display:flex;gap:10px;align-items:center;">
-        <span class="icon-wrap" style="width:36px;height:36px;display:grid;place-items:center;border-radius:10px;background:rgba(149,84,245,.12);color:var(--purple-bright);">${icon('shield')}</span>
+        <span class="icon-wrap" style="width:36px;height:36px;display:grid;place-items:center;border-radius:10px;background:var(--surface-2);color:var(--text);">${icon('shield')}</span>
         <div style="flex:1;"><strong style="font-size:12px;">Tip:</strong> <span style="font-size:11px;color:var(--text-secondary);">Los admins del grupo conservan permisos. El bot necesita ser admin en WhatsApp para moderar.</span></div>
       </div>
     </div>
@@ -1827,7 +1822,7 @@ function renderEditModal() {
       <button class="btn btn-primary" type="submit">${icon('plus')} Crear comando</button>
     </form></div>`;
     if (draft.customCommands.length) {
-      html += `<div class="edit-card"><h4>${icon('code')} Tus comandos creados <span class="badge">${draft.customCommands.length}</span></h4><div class="custom-cmd-list">${draft.customCommands.map((cc) => `<div class="custom-cmd-item"><div class="custom-cmd-item-head"><strong>.${escapeHtml(cc.name)}</strong><span class="alias-chip">${escapeHtml(cc.category)}</span><button class="btn btn-outline btn-small" type="button" data-action="delete-custom" data-name="${escapeHtml(cc.name)}">${icon('close')} Borrar</button></div><p>${escapeHtml(cc.description || 'Sin descripción')} · <span style="color:var(--text-muted);">permiso: ${escapeHtml(cc.permission)}</span> ${cc.aliases?.length?`· alias: ${escapeHtml(cc.aliases.join(', '))}`:''}</p><div style="padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.04);font-family:var(--mono);font-size:11px;white-space:pre-wrap;">${escapeHtml(cc.response)}</div></div>`).join('')}</div></div>`;
+      html += `<div class="edit-card"><h4>${icon('code')} Tus comandos creados <span class="badge">${draft.customCommands.length}</span></h4><div class="custom-cmd-list">${draft.customCommands.map((cc) => `<div class="custom-cmd-item"><div class="custom-cmd-item-head"><strong>.${escapeHtml(cc.name)}</strong><span class="alias-chip">${escapeHtml(cc.category)}</span><button class="btn btn-outline btn-small" type="button" data-action="delete-custom" data-name="${escapeHtml(cc.name)}">${icon('close')} Borrar</button></div><p>${escapeHtml(cc.description || 'Sin descripción')} · <span style="color:var(--text-muted);">permiso: ${escapeHtml(cc.permission)}</span> ${cc.aliases?.length?`· alias: ${escapeHtml(cc.aliases.join(', '))}`:''}</p><div style="padding:8px 10px;border-radius:10px;background:var(--surface-2);font-family:var(--mono);font-size:11px;white-space:pre-wrap;">${escapeHtml(cc.response)}</div></div>`).join('')}</div></div>`;
     } else {
       html += `<div class="edit-card" style="text-align:center;color:var(--text-muted);">No tienes comandos custom aún. ¡Crea el primero!</div>`;
     }
@@ -1877,7 +1872,7 @@ function renderCommandRow(c, draft, disabledSet, catDisabledSet = new Set()) {
   return `<div class="toggle-row ${effectiveOff ? 'is-disabled' : ''}" data-cmd="${escapeHtml(c.name)}">
     <div class="toggle-row-main">
       <div style="display:grid;gap:2px;min-width:0;">
-        <strong style="font-family:var(--mono);font-size:12px;">${escapeHtml(c.name)} ${c.isCustom ? `<span style="padding:2px 6px;border-radius:99px;background:rgba(149,84,245,.15);color:var(--purple-bright);font-size:9px;">CUSTOM</span>` : ''} ${isDisabled ? `<span style="padding:2px 6px;border-radius:99px;background:rgba(255,89,97,.12);color:#ff8f96;font-size:9px;">OFF</span>` : ''} ${!isDisabled && catOff ? `<span style="padding:2px 6px;border-radius:99px;background:rgba(255,196,84,.12);color:#ffc454;font-size:9px;">CATEGORÍA OFF</span>` : ''}</strong>
+        <strong style="font-family:var(--mono);font-size:12px;">${escapeHtml(c.name)} ${c.isCustom ? `<span style="padding:2px 6px;border-radius:99px;background:#111;color:#fff;font-size:9px;">CUSTOM</span>` : ''} ${isDisabled ? `<span style="padding:2px 6px;border-radius:99px;background:var(--red-tint);color:var(--red);font-size:9px;">OFF</span>` : ''} ${!isDisabled && catOff ? `<span style="padding:2px 6px;border-radius:99px;background:var(--yellow-tint);color:var(--yellow);font-size:9px;">CATEGORÍA OFF</span>` : ''}</strong>
         <small>${escapeHtml(c.description || '')}</small>
         ${aliases.length ? `<div class="alias-chips">${aliases.map((a) => `<span class="alias-chip">${escapeHtml(a)} ${extraAliases.includes(a) ? `<button type="button" data-action="remove-alias" data-cmd="${escapeHtml(c.name)}" data-alias="${escapeHtml(a)}" aria-label="Quitar">${icon('close')}</button>` : ''}</span>`).join('')}</div>` : ''}
         ${c.args ? `<small style="font-family:var(--mono);color:var(--purple-bright);">${escapeHtml(c.args)}</small>` : ''}
@@ -2183,8 +2178,8 @@ function toggleFavorite(path) {
 }
 
 function toggleTheme() {
-  state.theme = state.theme === 'light' ? 'dark' : 'light';
-  try { localStorage.setItem('stellar_theme', state.theme); } catch {}
+  // Sin tema oscuro: se mantiene la interfaz blanca (compatibilidad).
+  state.theme = 'light';
   renderPage();
 }
 
@@ -2796,10 +2791,6 @@ function mergeSnapshot(snapshot, { force = false } = {}) {
 
 async function boot() {
   applyThemeClass();
-  // preferencia del sistema solo la primera vez
-  if (!storedTheme()) {
-    state.theme = window.matchMedia?.('(prefers-color-scheme: light)')?.matches ? 'light' : 'dark';
-  }
   const loading = $('#main-content');
   if (loading && state.view !== 'landing') {
     loading.innerHTML = '<div class="page-content"><div class="skeleton" style="height:120px;margin-bottom:14px"></div><div class="skeleton" style="height:220px"></div></div>';
